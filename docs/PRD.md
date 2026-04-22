@@ -310,10 +310,15 @@ Because the main acquisition channels are Meta and TikTok ads, the landing page 
 8. Instrument analytics and run initial paid ad tests.
 
 ## 20. Reference Image Bundle
-The following files are referenced throughout this document (embedded in `docs/PRD.docx`):
-- songfromtext_web_app_ui_mockup.png
-- songfromtext_workflow_mockup_preview.png
-- neon_accented_music_app_ui_flow.png
-- neon_themed_music_dashboard_interface_design.png
-- a_clean_modern_dark_themed_web_landing_page_desig.png
-- a_wide_high_resolution_ui_ux_mockup_collage_on_a.png
+Reference mockups live in `docs/reference-images/` and collectively define the v1 visual direction (dark UI, neon pink/magenta + violet accents, glowing waveforms, gradient primary buttons, rounded cards).
+
+| File | Screens covered |
+|------|-----------------|
+| `image1.png` | Landing page hero ("Turn their messages into a song"), How it works (3 steps), Sign up / Continue, pricing teaser strip |
+| `image2.png` | Creation funnel — Paste messages, Choose vibe (Emotional / Funny / Dramatic / Savage), Input validation, Processing, Locked preview |
+| `image3.png` | "Your song is ready" paywall variants, subscription confirmation ("You're all set"), song result with waveform + download, Make it yours (regeneration tones) |
+| `image4.png` | Authed app shell — My Songs library, song detail/history, Account, Billing, Settings, Help & FAQ |
+| `image5.png` | Alternate landing ("Turn your texts into a viral song"), Add conversation paste variant, Creating progress states, "Your song is almost ready", Ready, Ready to share |
+| `image6.png` | Full-flow collage variant incl. screenshot upload exploration and alternate paywall/pricing layouts (NOTE: screenshot upload is explicitly out of scope for v1 per §3.2) |
+
+Implementation agents should treat these as **visual direction only** — product scope is defined by §3–§18 of this document. Where a mockup shows a feature not listed in the non-goals, follow the PRD.
