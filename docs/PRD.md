@@ -236,10 +236,11 @@ Use Kie custom mode where possible so title and style can be controlled. The pro
 ## 12. Technical Architecture
 - **Frontend**: Next.js with App Router, mobile-first responsive UI.
 - **Styling**: Tailwind CSS plus a component system such as shadcn/ui.
-- **Backend**: Next.js server routes or dedicated Node service for orchestration.
-- **Database**: Supabase Postgres.
-- **Storage**: Supabase Storage or Cloudflare R2 for generated assets and covers.
-- **Billing**: Stripe subscriptions.
+- **Backend**: Next.js server routes (App Router route handlers) for orchestration.
+- **Database**: Firebase Firestore.
+- **Auth**: Firebase Auth (email + social providers).
+- **Storage**: Firebase Storage for generated audio and cover art.
+- **Billing**: Whop (weekly subscription) via `@whop/sdk`.
 - **Analytics**: PostHog or equivalent.
 - **Music generation**: Kie.ai Suno API.
 
@@ -255,7 +256,7 @@ Use Kie custom mode where possible so title and style can be controlled. The pro
 - **users**: identity, subscription state, timestamps.
 - **projects**: raw input, normalized input, title, selected tone, status.
 - **generations**: project_id, provider task id, generation status, output URLs, version label, duration metadata.
-- **subscriptions**: stripe customer id, product id, active state, renewal timestamps.
+- **subscriptions**: whop membership id, plan id (`plan_...`), active state, renewal timestamps.
 - **events**: analytics events for funnel and retention measurement.
 
 ## 14. Analytics and Measurement
@@ -301,7 +302,7 @@ Because the main acquisition channels are Meta and TikTok ads, the landing page 
 1. Implement landing page and creation flow UI.
 2. Implement input validation and tone selection.
 3. Implement locked preview and hard paywall.
-4. Wire Stripe subscription checkout and webhook handling.
+4. Wire Whop subscription checkout (`@whop/sdk` → `purchase_url`) and webhook handling.
 5. Implement backend orchestration for Kie generation after payment.
 6. Implement song result screen and my songs library.
 7. Add account, billing, settings, and FAQ pages.
