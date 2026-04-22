@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// Locked-down starter rules for SongFromText.
+// Users can only read/write their own user doc and their own projects.
+// All generation / subscription writes go through the Admin SDK on the server.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /projects/{projectId} {
+      allow read, write: if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    // Generations, subscriptions, and events are server-managed (Admin SDK only).
+    match /generations/{docId} {
+      allow read: if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /subscriptions/{docId} {
+      allow read: if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /events/{docId} {
+      allow read, write: if false;
+    }
+  }
+}
