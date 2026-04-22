@@ -20,12 +20,17 @@ dist/
 # Vercel
 .vercel/
 
-# Supabase
-.supabase/
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
 
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Logs
+*.log
 
 # OS
 .DS_Store
