@@ -14,7 +14,7 @@ Primary acquisition: Meta + TikTok ads riding the current "text-to-song" viral t
 - **Billing**: Whop (weekly subscription, hard paywall, NO free trial) — via `@whop/sdk`
 - **Analytics**: PostHog
 - **Music generation**: Kie.ai Suno API (custom mode so we can enforce verbatim lyrics)
-- **Hosting**: Vercel (default until revisited)
+- **Hosting**: Firebase App Hosting (SSR Next.js, same project as Firestore/Auth/Storage — single Firebase project)
 
 ## Business Model
 - **Price**: £6.99/week (v1 default — revisit after ad tests)
@@ -37,6 +37,11 @@ SongFromText/
 │   ├── PRD.md             # Source of truth (in this repo)
 │   └── plans/             # Feature plans
 └── firebase/              # Firestore rules, indexes, functions (if used)
+
+# Root-level Firebase config:
+# - apphosting.yaml           # Firebase App Hosting build + runtime config
+# - firebase.json             # Firestore rules/indexes/storage/emulator config
+# - .firebaserc               # Project alias
 ```
 
 ## Commands
@@ -53,6 +58,11 @@ pnpm build
 # Typecheck / lint
 pnpm typecheck
 pnpm lint
+
+# Firebase App Hosting deploy (push to `main` auto-deploys once backend is linked)
+firebase apphosting:backends:create      # one-time: link GitHub repo → backend
+firebase deploy --only apphosting        # manual deploy if needed
+firebase emulators:start                 # local Firestore/Auth/Storage emulators
 ```
 
 ## Environment Variables
@@ -94,7 +104,14 @@ NEXT_PUBLIC_POSTHOG_HOST=
 ## Key Integration Points
 - **Kie.ai Suno API** — music generation, custom mode (forces our lyrics). Polling or webhook for job completion.
 - **Whop** — weekly subscription via `@whop/sdk`. Create checkout → redirect to `purchase_url` → webhook activates subscription. HTTPS required on redirect URLs (use ngrok locally). Plan IDs start with `plan_` (NOT `prod_`). See `~/.claude/rules/whop-integration.md`.
-- **Firebase** — Firestore collections: `users`, `projects` (input + metadata), `generations` (provider job + assets), `subscriptions`, `events`. Firebase Auth for identity. Firebase Storage for MP3 + cover art assets.
+- **Firebase** — Firestore collections: `users`, `projects` (input + metadata), `generations` (provider job + assets), `subscriptions`, `events`. Firebase Auth for identity. Firebase Storage for MP3 + cover art assets. Firebase App Hosting serves the Next.js app (SSR) from the same project.
+
+## Hosting Notes (Firebase App Hosting)
+- App Hosting runs Next.js natively (SSR + route handlers + middleware supported). No serverless adapter needed.
+- Secrets (WHOP_API_KEY, FIREBASE_PRIVATE_KEY, KIE_API_KEY, etc.) go in `apphosting.yaml` via `secret:` references, synced from Google Secret Manager.
+- Public env vars (NEXT_PUBLIC_*) can be set as plain `env:` values in `apphosting.yaml`.
+- Rollouts are triggered by pushes to the linked branch (default: `main`). Preview channels available per-PR.
+- Custom domain: configure in Firebase console after first rollout.
 
 ## Notes & Gotchas
 - Full PRD: [`docs/PRD.md`](docs/PRD.md)

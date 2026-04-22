@@ -243,6 +243,7 @@ Use Kie custom mode where possible so title and style can be controlled. The pro
 - **Billing**: Whop (weekly subscription) via `@whop/sdk`.
 - **Analytics**: PostHog or equivalent.
 - **Music generation**: Kie.ai Suno API.
+- **Hosting**: Firebase App Hosting (SSR Next.js, single Firebase project for hosting + Firestore + Auth + Storage).
 
 ### 12.1 Core backend responsibilities
 - Session and identity management.
