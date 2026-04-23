@@ -1,6 +1,5 @@
 {
-  "_comment": "TODO: CEO to replace TBD-project-id with the real Firebase project ID once created.",
   "projects": {
-    "default": "TBD-project-id"
+    "default": "songfromtext-app"
   }
 }
