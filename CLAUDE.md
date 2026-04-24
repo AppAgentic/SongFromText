@@ -84,7 +84,7 @@ FIREBASE_PRIVATE_KEY=
 WHOP_API_KEY=
 WHOP_COMPANY_ID=
 WHOP_WEBHOOK_SECRET=
-WHOP_PLAN_ID_WEEKLY=
+SONG_WEEKLY_PRICE_GBP=6.99
 
 # Kie.ai (Suno)
 KIE_API_KEY=
@@ -103,7 +103,7 @@ NEXT_PUBLIC_POSTHOG_HOST=
 
 ## Key Integration Points
 - **Kie.ai Suno API** — music generation, custom mode (forces our lyrics). Polling or webhook for job completion.
-- **Whop** — weekly subscription via `@whop/sdk`. Create checkout → redirect to `purchase_url` → webhook activates subscription. HTTPS required on redirect URLs (use ngrok locally). Plan IDs start with `plan_` (NOT `prod_`). See `~/.claude/rules/whop-integration.md`.
+- **Whop** — weekly subscription via `@whop/sdk`. Create checkout with an inline dynamic renewal plan → redirect to `purchase_url` → webhook activates subscription. Do not require a hardcoded weekly plan id; store the returned checkout id + plan id for reconciliation. Price comes from `SONG_WEEKLY_PRICE_GBP` (default £6.99). HTTPS redirect URLs required — use ngrok for local dev. See `~/.claude/rules/whop-integration.md`.
 - **Firebase** — Firestore collections: `users`, `projects` (input + metadata), `generations` (provider job + assets), `subscriptions`, `events`. Firebase Auth for identity. Firebase Storage for MP3 + cover art assets. Firebase App Hosting serves the Next.js app (SSR) from the same project.
 
 ## Hosting Notes (Firebase App Hosting)

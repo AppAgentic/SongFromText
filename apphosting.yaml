@@ -53,7 +53,7 @@ env:
       - BUILD
       - RUNTIME
 
-  # --- Server-only secrets (Secret Manager) ---
+  # --- Server-only runtime config and secrets ---
   - variable: FIREBASE_PROJECT_ID
     value: "songfromtext-app"
   - variable: WHOP_API_KEY
@@ -62,8 +62,8 @@ env:
     secret: WHOP_WEBHOOK_SECRET
   - variable: WHOP_COMPANY_ID
     secret: WHOP_COMPANY_ID
-  - variable: WHOP_PLAN_ID_WEEKLY
-    secret: WHOP_PLAN_ID_WEEKLY
+  - variable: SONG_WEEKLY_PRICE_GBP
+    value: "6.99"
   - variable: FIREBASE_CLIENT_EMAIL
     secret: FIREBASE_CLIENT_EMAIL
   - variable: FIREBASE_PRIVATE_KEY

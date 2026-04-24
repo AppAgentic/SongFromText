@@ -257,7 +257,7 @@ Use Kie custom mode where possible so title and style can be controlled. The pro
 - **users**: identity, subscription state, timestamps.
 - **projects**: raw input, normalized input, title, selected tone, status.
 - **generations**: project_id, provider task id, generation status, output URLs, version label, duration metadata.
-- **subscriptions**: whop membership id, plan id (`plan_...`), active state, renewal timestamps.
+- **subscriptions**: Whop membership id, checkout id, returned plan id, active state, renewal timestamps, price/currency at purchase time.
 - **events**: analytics events for funnel and retention measurement.
 
 ## 14. Analytics and Measurement
@@ -303,7 +303,7 @@ Because the main acquisition channels are Meta and TikTok ads, the landing page 
 1. Implement landing page and creation flow UI.
 2. Implement input validation and tone selection.
 3. Implement locked preview and hard paywall.
-4. Wire Whop subscription checkout (`@whop/sdk` → `purchase_url`) and webhook handling.
+4. Wire Whop subscription checkout (`@whop/sdk` dynamic weekly renewal plan → `purchase_url`) and webhook handling.
 5. Implement backend orchestration for Kie generation after payment.
 6. Implement song result screen and my songs library.
 7. Add account, billing, settings, and FAQ pages.
