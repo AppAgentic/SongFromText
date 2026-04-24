@@ -14,44 +14,18 @@ env:
   # --- Public (exposed to client) ---
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     value: "AIzaSyBtnJcEXJmuqB971C0H4K7hUxlw22ICDaI"
-    availability:
-      - BUILD
-      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
     value: "songfromtext-app.firebaseapp.com"
-    availability:
-      - BUILD
-      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
     value: "songfromtext-app"
-    availability:
-      - BUILD
-      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
     value: "songfromtext-app.firebasestorage.app"
-    availability:
-      - BUILD
-      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
     value: "872851323679"
-    availability:
-      - BUILD
-      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
     value: "1:872851323679:web:1e5f2cc35d42e917a8ce2a"
-    availability:
-      - BUILD
-      - RUNTIME
-  - variable: NEXT_PUBLIC_POSTHOG_KEY
-    value: ""
-    availability:
-      - BUILD
-      - RUNTIME
   - variable: NEXT_PUBLIC_POSTHOG_HOST
     value: "https://eu.i.posthog.com"
-    availability:
-      - BUILD
-      - RUNTIME
 
   # --- Server-only runtime config and secrets ---
   - variable: FIREBASE_PROJECT_ID
