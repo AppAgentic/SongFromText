@@ -20,14 +20,14 @@ let _webhookClient: Whop | null = null;
 
 function getClient(): Whop {
   if (_client) return _client;
-  const apiKey = process.env.WHOP_API_KEY;
+  const apiKey = process.env.WHOP_API_KEY?.trim();
   if (!apiKey) throw new Error("WHOP_API_KEY not set");
   _client = new Whop({ apiKey });
   return _client;
 }
 
 function getWhopCompanyId(): string {
-  const companyId = process.env.WHOP_COMPANY_ID;
+  const companyId = process.env.WHOP_COMPANY_ID?.trim();
   if (!companyId) throw new Error("WHOP_COMPANY_ID not set");
   return companyId;
 }
@@ -94,11 +94,11 @@ export async function createCheckout(
     redirect_url: options.redirectUrl,
     source_url: options.sourceUrl,
     metadata: {
+      ...options.metadata,
       user_id: options.userId,
       product: PRODUCT_EXTERNAL_IDENTIFIER,
       price_gbp: priceGbp.toFixed(2),
       billing_period_days: String(BILLING_PERIOD_DAYS),
-      ...options.metadata,
     },
   });
 
@@ -132,13 +132,13 @@ export function unwrapWebhook(
   rawBody: string,
   headers: Headers,
 ): UnwrapWebhookEvent {
-  const webhookSecret = process.env.WHOP_WEBHOOK_SECRET;
+  const webhookSecret = process.env.WHOP_WEBHOOK_SECRET?.trim();
   if (!webhookSecret) throw new Error("WHOP_WEBHOOK_SECRET not set");
   const webhookKey = toStandardWebhookKey(webhookSecret);
 
   if (!_webhookClient) {
     _webhookClient = new Whop({
-      apiKey: process.env.WHOP_API_KEY ?? "webhook_verification_only",
+      apiKey: process.env.WHOP_API_KEY?.trim() ?? "webhook_verification_only",
       webhookKey,
     });
   }

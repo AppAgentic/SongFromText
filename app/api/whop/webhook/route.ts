@@ -342,6 +342,7 @@ function getMetadataNumber(
   key: string,
 ): number | undefined {
   const value = metadata[key];
+  if (value === null || value === undefined || value === "") return undefined;
   const numberValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numberValue) ? numberValue : undefined;
 }
