@@ -75,7 +75,7 @@ NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 NEXT_PUBLIC_FIREBASE_APP_ID=
 
-# Firebase Admin (server only — service account JSON or split env)
+# Firebase Admin (server only — App Hosting uses ADC; service account env is local fallback)
 FIREBASE_PROJECT_ID=
 FIREBASE_CLIENT_EMAIL=
 FIREBASE_PRIVATE_KEY=
@@ -108,7 +108,8 @@ NEXT_PUBLIC_POSTHOG_HOST=
 
 ## Hosting Notes (Firebase App Hosting)
 - App Hosting runs Next.js natively (SSR + route handlers + middleware supported). No serverless adapter needed.
-- Secrets (WHOP_API_KEY, FIREBASE_PRIVATE_KEY, KIE_API_KEY, etc.) go in `apphosting.yaml` via `secret:` references, synced from Google Secret Manager.
+- Secrets (WHOP_API_KEY, WHOP_WEBHOOK_SECRET, WHOP_COMPANY_ID, KIE_API_KEY once available, etc.) go in `apphosting.yaml` via `secret:` references, synced from Google Secret Manager.
+- Firebase Admin on App Hosting should use application default credentials rather than checked-in service-account secret refs.
 - Public env vars (NEXT_PUBLIC_*) can be set as plain `env:` values in `apphosting.yaml`.
 - Rollouts are triggered by pushes to the linked branch (default: `main`). Preview channels available per-PR.
 - Custom domain: configure in Firebase console after first rollout.

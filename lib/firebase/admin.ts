@@ -3,8 +3,8 @@
  * Used by server-side code (API routes, webhook handlers).
  * See PRD §5 (Database / Auth) and §7.1 (Whop webhook flow).
  *
- * Requires: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY.
- * In production these come from Secret Manager via apphosting.yaml.
+ * App Hosting provides application default credentials automatically.
+ * Local dev can still use FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY.
  */
 import {
   cert,
@@ -28,15 +28,19 @@ export function getAdminApp(): App {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
-  if (!projectId || !clientEmail || !privateKey) {
-    throw new Error(
-      "Firebase Admin SDK not configured. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY.",
-    );
+  if (clientEmail && privateKey) {
+    if (!projectId) {
+      throw new Error("FIREBASE_PROJECT_ID is required when using service account env vars.");
+    }
+
+    _adminApp = initializeApp({
+      credential: cert({ projectId, clientEmail, privateKey }),
+    });
+
+    return _adminApp;
   }
 
-  _adminApp = initializeApp({
-    credential: cert({ projectId, clientEmail, privateKey }),
-  });
+  _adminApp = initializeApp(projectId ? { projectId } : undefined);
 
   return _adminApp;
 }

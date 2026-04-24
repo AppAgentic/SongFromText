@@ -64,9 +64,6 @@ env:
     secret: WHOP_COMPANY_ID
   - variable: SONG_WEEKLY_PRICE_GBP
     value: "6.99"
-  - variable: FIREBASE_CLIENT_EMAIL
-    secret: FIREBASE_CLIENT_EMAIL
-  - variable: FIREBASE_PRIVATE_KEY
-    secret: FIREBASE_PRIVATE_KEY
-  - variable: KIE_API_KEY
-    secret: KIE_API_KEY
+
+  # Firebase Admin uses App Hosting's application default credentials.
+  # Add KIE_API_KEY here after the real Kie.ai key is created in Secret Manager.
