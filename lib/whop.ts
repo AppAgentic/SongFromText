@@ -9,12 +9,14 @@
  * HTTPS redirect URLs required — use ngrok for local dev.
  */
 import Whop from "@whop/sdk";
+import type { UnwrapWebhookEvent } from "@whop/sdk/resources/webhooks";
 
 const DEFAULT_WEEKLY_PRICE_GBP = 6.99;
 const BILLING_PERIOD_DAYS = 7;
 const PRODUCT_EXTERNAL_IDENTIFIER = "songfromtext-weekly";
 
 let _client: Whop | null = null;
+let _webhookClient: Whop | null = null;
 
 function getClient(): Whop {
   if (_client) return _client;
@@ -111,14 +113,46 @@ export async function createCheckout(
 
 /**
  * Verify a Whop webhook payload using WHOP_WEBHOOK_SECRET.
- * NOT IMPLEMENTED — fill in once webhook signing scheme is confirmed.
+ * Whop uses the Standard Webhooks header set:
+ * webhook-id, webhook-timestamp, and webhook-signature.
  */
 export function verifyWebhook(
-  _rawBody: string,
-  _signatureHeader: string | null,
+  rawBody: string,
+  headers: Headers,
 ): boolean {
-  void _rawBody;
-  void _signatureHeader;
-  // TODO: HMAC-SHA256 verify with WHOP_WEBHOOK_SECRET
-  throw new Error("verifyWebhook not implemented");
+  try {
+    unwrapWebhook(rawBody, headers);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function unwrapWebhook(
+  rawBody: string,
+  headers: Headers,
+): UnwrapWebhookEvent {
+  const webhookSecret = process.env.WHOP_WEBHOOK_SECRET;
+  if (!webhookSecret) throw new Error("WHOP_WEBHOOK_SECRET not set");
+  const webhookKey = toStandardWebhookKey(webhookSecret);
+
+  if (!_webhookClient) {
+    _webhookClient = new Whop({
+      apiKey: process.env.WHOP_API_KEY ?? "webhook_verification_only",
+      webhookKey,
+    });
+  }
+
+  return _webhookClient.webhooks.unwrap(rawBody, {
+    headers: Object.fromEntries(headers.entries()),
+    key: webhookKey,
+  });
+}
+
+function toStandardWebhookKey(webhookSecret: string): string {
+  if (webhookSecret.startsWith("whsec_")) return webhookSecret;
+  if (webhookSecret.startsWith("ws_")) {
+    return Buffer.from(webhookSecret, "utf8").toString("base64");
+  }
+  return webhookSecret;
 }

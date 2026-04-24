@@ -12,8 +12,10 @@ import {
   initializeApp,
   type App,
 } from "firebase-admin/app";
+import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
 let _adminApp: App | null = null;
+let _adminDb: Firestore | null = null;
 
 export function getAdminApp(): App {
   if (_adminApp) return _adminApp;
@@ -45,4 +47,10 @@ export function getAdminApp(): App {
   return _adminApp;
 }
 
-// TODO: export getAdminAuth, getAdminFirestore, getAdminStorage helpers as needed
+export function getAdminDb(): Firestore {
+  if (_adminDb) return _adminDb;
+  _adminDb = getFirestore(getAdminApp());
+  return _adminDb;
+}
+
+// TODO: export getAdminAuth, getAdminStorage helpers as needed
