@@ -13,9 +13,10 @@ Variant route: `/quiz`
 - Step 3: locked preview and checkout.
 
 Sound update:
+- Put `UK R&B` first and use it as the default selected sound.
+- Add `US R&B` as a smoother, polished R&B alternate.
 - Keep a direct `Country` choice for users who expect the current country-pop / country-heartbreak lane from short-form ads.
-- Add `UK folk` as the Amber Run-adjacent lane: British, acoustic, intimate, and emotional rather than full Nashville country.
-- Add `UK R&B` as a smooth late-night lane for users who want R&B rather than folk/country.
+- Remove `UK folk` and `Dreamy synth` from the active picker to keep the first test tighter.
 - Keep artist names out of public UI/generation prompts and describe the broader sound instead.
 - Keep both routes using the shared `lib/vibes.ts` list so the picker and checkout validation stay in sync.
 

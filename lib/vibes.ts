@@ -1,23 +1,5 @@
 export const SONG_VIBES = [
   {
-    id: "sad-acoustic",
-    label: "Sad acoustic",
-    detail: "soft guitar",
-    badge: "Moonlit",
-    sunoStyle:
-      "emotional acoustic pop, fingerpicked guitar, intimate vocal, soft harmonies, slow tempo, warm room",
-    negativeTags: "EDM, rap, trap drums, heavy metal, novelty",
-  },
-  {
-    id: "uk-folk-country",
-    label: "UK folk",
-    detail: "indie acoustic",
-    badge: "TikTok",
-    sunoStyle:
-      "British indie folk, acoustic guitar, intimate vocal, melancholy build, warm room, cinematic chorus",
-    negativeTags: "EDM, trap drums, heavy metal, glossy dance pop, parody",
-  },
-  {
     id: "uk-rnb",
     label: "UK R&B",
     detail: "late-night groove",
@@ -25,6 +7,24 @@ export const SONG_VIBES = [
     sunoStyle:
       "UK R&B, alt R&B, warm sub bass, syncopated drums, silky intimate vocal, moody chords, late-night mix",
     negativeTags: "country twang, folk ballad, heavy metal, EDM drop, novelty",
+  },
+  {
+    id: "us-rnb",
+    label: "US R&B",
+    detail: "smooth polish",
+    badge: "Silky",
+    sunoStyle:
+      "US R&B, contemporary R&B, smooth drums, warm bass, lush chords, polished intimate vocal, late-night groove",
+    negativeTags: "country twang, folk ballad, heavy metal, EDM drop, novelty",
+  },
+  {
+    id: "sad-acoustic",
+    label: "Sad acoustic",
+    detail: "soft guitar",
+    badge: "Moonlit",
+    sunoStyle:
+      "emotional acoustic pop, fingerpicked guitar, intimate vocal, soft harmonies, slow tempo, warm room",
+    negativeTags: "EDM, rap, trap drums, heavy metal, novelty",
   },
   {
     id: "country-heartbreak",
@@ -43,15 +43,6 @@ export const SONG_VIBES = [
     sunoStyle:
       "dark pop, punchy drums, big chorus, confident vocal, glossy production, tense verses",
     negativeTags: "country twang, folk ballad, heavy metal, lo-fi",
-  },
-  {
-    id: "dreamy-synth",
-    label: "Dreamy synth",
-    detail: "late night",
-    badge: "Glow",
-    sunoStyle:
-      "dreamy synthpop, soft pads, late-night atmosphere, airy vocal, pulsing beat, wide reverb",
-    negativeTags: "country twang, acoustic folk, heavy metal, harsh rap",
   },
   {
     id: "rap-confessional",

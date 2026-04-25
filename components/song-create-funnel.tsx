@@ -54,7 +54,7 @@ interface MessageStats {
 export function SongCreateFunnel({ variant = "builder" }: { variant?: FunnelVariant }) {
   const [messages, setMessages] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
-  const [vibe, setVibe] = useState<VibeId>("sad-acoustic");
+  const [vibe, setVibe] = useState<VibeId>("uk-rnb");
   const [customSound, setCustomSound] = useState("");
   const [checkoutState, setCheckoutState] = useState<CheckoutState>("idle");
   const [error, setError] = useState<string | null>(null);

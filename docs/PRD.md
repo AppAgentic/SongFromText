@@ -123,7 +123,7 @@ SongFromText should provide a much simpler, trend-aligned experience: paste the 
 - Continue CTA disabled until minimum criteria pass.
 
 ### 8.6 Choose Tone / Genre
-- User selects one of a few large sound cards, including UK R&B, Country, and UK folk/acoustic options for current short-form genre trends.
+- User selects one of a few large sound cards, with UK R&B first as the recommended default and US R&B available as a smoother alternate R&B lane.
 - Keep artist names out of the public UI and generation prompts; describe the broader sound instead.
 - Keep choices intentionally narrow to reduce paralysis.
 
