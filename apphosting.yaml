@@ -26,6 +26,8 @@ env:
     value: "1:872851323679:web:1e5f2cc35d42e917a8ce2a"
   - variable: NEXT_PUBLIC_POSTHOG_HOST
     value: "https://eu.i.posthog.com"
+  - variable: NEXT_PUBLIC_META_PIXEL_ID
+    value: "2135051210609761"
 
   # --- Server-only runtime config and secrets ---
   - variable: FIREBASE_PROJECT_ID
@@ -38,10 +40,10 @@ env:
     secret: WHOP_COMPANY_ID
   - variable: SONG_WEEKLY_PRICE_GBP
     value: "6.99"
+  - variable: META_CAPI_ACCESS_TOKEN
+    secret: META_CAPI_ACCESS_TOKEN
   - variable: META_GRAPH_VERSION
     value: "v25.0"
 
   # Firebase Admin uses App Hosting's application default credentials.
   # Add KIE_API_KEY here after the real Kie.ai key is created in Secret Manager.
-  # Add NEXT_PUBLIC_META_PIXEL_ID and META_CAPI_ACCESS_TOKEN after Meta Business
-  # Manager has a real dataset/pixel and CAPI token for SongFromText.
