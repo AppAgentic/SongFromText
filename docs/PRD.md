@@ -224,7 +224,16 @@ i'm sorry okay
 ```
 
 ### 11.3 Kie/Suno prompt guidance
-Use Kie custom mode where possible so title and style can be controlled. The prompt should explicitly instruct the model to use only the supplied lines as lyrics, while allowing repetition for structure. The backend should never ask the model to rewrite the lines into a new lyric narrative.
+Use Kie/Suno Custom Mode for paid generation so the backend controls the title, style, and lyrics separately. In Custom Mode with vocals, the `prompt` should contain the structured lyrics payload, not a general description. The backend should never use simple/non-custom mode for the final song because that mode can auto-generate or rewrite lyrics from a loose idea.
+
+Vibe handling:
+- Treat the user-facing vibe as a compact label only.
+- Map each vibe ID to a backend `style` string that includes genre, mood, instruments, tempo/energy, vocal direction, and production language.
+- Use `negativeTags` to prevent obvious drift, such as rap/trap/EDM on acoustic or country options.
+- Keep artist names out of public UI and generation prompts; describe the broader sound instead.
+- Persist `vibeId`, final `style`, `negativeTags`, model, and Kie task ID on generation records for debugging and prompt iteration.
+
+See `docs/plans/suno-style-research.md` for the current source-backed mapping draft.
 
 ### 11.4 Post-payment generation flow
 1. User completes weekly subscription payment.

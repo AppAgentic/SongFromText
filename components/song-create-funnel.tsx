@@ -22,7 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { getMetaAttribution, trackMetaPixelEvent } from "@/lib/meta/client";
 import { cn } from "@/lib/utils";
-import { SONG_VIBES, type VibeId } from "@/lib/vibes";
+import { getSongVibe, SONG_VIBES, type VibeId } from "@/lib/vibes";
 
 const MIN_MESSAGES = 5;
 const MIN_CHARS = 40;
@@ -75,7 +75,7 @@ export function SongCreateFunnel({ variant = "builder" }: { variant?: FunnelVari
     };
   }, [messages]);
 
-  const selectedVibe = SONG_VIBES.find((item) => item.id === vibe) ?? SONG_VIBES[0];
+  const selectedVibe = getSongVibe(vibe);
   const isBusy = checkoutState !== "idle";
   const canRevealPrice = stats.ready;
 
