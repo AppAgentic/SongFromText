@@ -84,7 +84,7 @@ SongFromText should provide a much simpler, trend-aligned experience: paste the 
 1. User lands on the landing page from a Meta or TikTok ad.
 2. User taps primary CTA and reaches the creation screen.
 3. User pastes only the other person's messages into a textarea.
-4. User selects a sound/vibe or accepts the recommended default.
+4. User selects a sound/vibe or accepts the recommended default, with an optional custom sound note for specifics like "UK R&B with garage drums."
 5. System validates that the input is substantial enough to make a good song.
 6. System shows a processing screen with low-cost progress states.
 7. System shows a locked preview with generated title, tone, and waveform-style teaser.
@@ -229,6 +229,7 @@ Use Kie/Suno Custom Mode for paid generation so the backend controls the title, 
 Vibe handling:
 - Treat the user-facing sound/vibe as a compact label only.
 - Map each vibe ID to a backend `style` string that includes genre, mood, instruments, tempo/energy, vocal direction, and production language.
+- Let users add an optional custom sound note in the sound step. Treat it as a refinement layered onto the selected preset, not as an unconstrained replacement for the backend style mapping.
 - Use `negativeTags` to prevent obvious drift, such as rap/trap/EDM on acoustic or country options.
 - Keep artist names out of public UI and generation prompts; describe the broader sound instead.
 - Persist `vibeId`, final `style`, `negativeTags`, model, and Kie task ID on generation records for debugging and prompt iteration.

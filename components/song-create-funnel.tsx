@@ -27,6 +27,7 @@ import { getSongVibe, SONG_VIBES, type VibeId } from "@/lib/vibes";
 const MIN_MESSAGES = 5;
 const MIN_CHARS = 40;
 const MAX_CHARS = 2000;
+const CUSTOM_SOUND_MAX_CHARS = 160;
 
 const SAMPLE_MESSAGES = [
   "I know I said I was fine but I was not",
@@ -54,6 +55,7 @@ export function SongCreateFunnel({ variant = "builder" }: { variant?: FunnelVari
   const [messages, setMessages] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [vibe, setVibe] = useState<VibeId>("sad-acoustic");
+  const [customSound, setCustomSound] = useState("");
   const [checkoutState, setCheckoutState] = useState<CheckoutState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [quizStep, setQuizStep] = useState(0);
@@ -76,6 +78,8 @@ export function SongCreateFunnel({ variant = "builder" }: { variant?: FunnelVari
   }, [messages]);
 
   const selectedVibe = getSongVibe(vibe);
+  const trimmedCustomSound = customSound.trim();
+  const soundLabel = trimmedCustomSound || selectedVibe.label;
   const isBusy = checkoutState !== "idle";
   const canRevealPrice = stats.ready;
 
@@ -132,6 +136,7 @@ export function SongCreateFunnel({ variant = "builder" }: { variant?: FunnelVari
         body: JSON.stringify({
           text: stats.text,
           vibe,
+          customSound: trimmedCustomSound || undefined,
           attribution: getMetaAttribution(),
         }),
       });
@@ -199,13 +204,20 @@ export function SongCreateFunnel({ variant = "builder" }: { variant?: FunnelVari
         ) : null}
 
         {quizStep === 1 ? (
-          <VibePicker vibe={vibe} onVibeChange={setVibe} selectedVibe={selectedVibe} quiz />
+          <VibePicker
+            vibe={vibe}
+            selectedVibe={selectedVibe}
+            customSound={customSound}
+            onVibeChange={setVibe}
+            onCustomSoundChange={setCustomSound}
+            quiz
+          />
         ) : null}
 
         {quizStep === 2 ? (
           <LockedPreview
             stats={stats}
-            selectedVibe={selectedVibe}
+            soundLabel={soundLabel}
             checkoutState={checkoutState}
             error={error}
             onCheckout={handleCheckout}
@@ -258,12 +270,18 @@ export function SongCreateFunnel({ variant = "builder" }: { variant?: FunnelVari
             onUpdate={updateMessage}
             onRemove={removeMessage}
           />
-          <VibePicker vibe={vibe} onVibeChange={setVibe} selectedVibe={selectedVibe} />
+          <VibePicker
+            vibe={vibe}
+            selectedVibe={selectedVibe}
+            customSound={customSound}
+            onVibeChange={setVibe}
+            onCustomSoundChange={setCustomSound}
+          />
         </div>
 
         <LockedPreview
           stats={stats}
-          selectedVibe={selectedVibe}
+          soundLabel={soundLabel}
           checkoutState={checkoutState}
           error={error}
           onCheckout={handleCheckout}
@@ -433,12 +451,16 @@ function MessageComposer({
 function VibePicker({
   vibe,
   selectedVibe,
+  customSound,
   onVibeChange,
+  onCustomSoundChange,
   quiz = false,
 }: {
   vibe: VibeId;
   selectedVibe: (typeof SONG_VIBES)[number];
+  customSound: string;
   onVibeChange: (vibe: VibeId) => void;
+  onCustomSoundChange: (sound: string) => void;
   quiz?: boolean;
 }) {
   return (
@@ -467,13 +489,32 @@ function VibePicker({
           </button>
         ))}
       </div>
+
+      <div className="rounded-[8px] border border-white/10 bg-black/24 p-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <Label htmlFor="custom-sound" className="text-xs font-medium text-white/72">
+            Custom sound
+          </Label>
+          <span className="text-xs text-white/32">
+            {customSound.length}/{CUSTOM_SOUND_MAX_CHARS}
+          </span>
+        </div>
+        <Textarea
+          id="custom-sound"
+          value={customSound}
+          onChange={(event) => onCustomSoundChange(event.target.value)}
+          maxLength={CUSTOM_SOUND_MAX_CHARS}
+          placeholder="UK R&B with garage drums, smooth vocal, late-night bass"
+          className="min-h-20 resize-none border-0 bg-transparent px-0 py-0 text-[15px] leading-6 text-white shadow-none placeholder:text-white/28 focus-visible:ring-0"
+        />
+      </div>
     </section>
   );
 }
 
 function LockedPreview({
   stats,
-  selectedVibe,
+  soundLabel,
   checkoutState,
   error,
   onCheckout,
@@ -482,7 +523,7 @@ function LockedPreview({
   showAction = true,
 }: {
   stats: MessageStats;
-  selectedVibe: (typeof SONG_VIBES)[number];
+  soundLabel: string;
   checkoutState: CheckoutState;
   error: string | null;
   onCheckout: () => void;
@@ -523,7 +564,7 @@ function LockedPreview({
 
       <div className="mt-5 space-y-3 border-t border-white/10 pt-5">
         <PreviewRow label="Messages" value={stats.count ? `${stats.count} added` : "None yet"} complete={stats.hasEnoughMessages} />
-        <PreviewRow label="Sound" value={selectedVibe.label} complete />
+        <PreviewRow label="Sound" value={soundLabel} complete />
         <PreviewRow label="Lyrics" value="Exact words" complete={stats.hasMessages} />
       </div>
 

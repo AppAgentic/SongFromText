@@ -58,4 +58,5 @@ Use this generation shape after Whop subscription activation:
 - Put section tags like `[Verse]`, `[Chorus]`, and repeated hook lines in the lyrics payload.
 - Keep `title` generated from the strongest original message and clamp to 80 characters.
 - Store the selected `vibeId`, final `style`, `negativeTags`, model, style weight, and Kie `taskId` on the `generations` document for debugging and iteration.
+- Store optional user `customSound` from the funnel and append it as a short refinement to the backend style string after validation, keeping the selected preset as the stable fallback.
 - Generate at least two tracks per request if Kie returns variations; show the best two in the result UI.

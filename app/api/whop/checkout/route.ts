@@ -21,6 +21,7 @@ export const runtime = "nodejs";
 
 const CheckoutRequestSchema = PastedInputSchema.extend({
   vibe: z.enum(VIBE_VALUES),
+  customSound: z.string().trim().max(160).optional(),
   attribution: z
     .object({
       fbp: z.string().optional(),
@@ -70,11 +71,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   const projectRef = db.collection("projects").doc();
   const userRef = db.collection("users").doc(uid);
   const text = parsed.data.text.trim();
+  const customSound = parsed.data.customSound?.trim() || undefined;
   const lines = getLines(text);
   const origin = getRequestOrigin(req);
   const redirectUrl = `${origin}/create?checkout=return&projectId=${projectRef.id}`;
   const sourceUrl = req.headers.get("referer") ?? `${origin}/create`;
-  const preview = buildPreview(lines, parsed.data.vibe);
+  const preview = buildPreview(lines, parsed.data.vibe, customSound);
   const attribution = parsed.data.attribution;
   const metaContext = getMetaRequestContext(req, attribution);
   const initiateCheckoutEventId = generateMetaEventId("ic");
@@ -87,6 +89,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     generationStatus: "not_started",
     inputText: text,
     vibe: parsed.data.vibe,
+    customSound: customSound ?? null,
     preview,
     attribution: compactObject({
       ...attribution,
@@ -120,6 +123,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       metadata: {
         project_id: projectRef.id,
         vibe: parsed.data.vibe,
+        ...(customSound ? { custom_sound: customSound } : {}),
         meta_initiate_checkout_event_id: initiateCheckoutEventId,
         meta_purchase_event_id: purchaseEventId,
       },
@@ -209,7 +213,11 @@ function getLines(text: string): string[] {
   return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
-function buildPreview(lines: string[], vibe: string): Record<string, unknown> {
+function buildPreview(
+  lines: string[],
+  vibe: string,
+  customSound?: string,
+): Record<string, unknown> {
   const hook = lines[0] ?? "Their message";
   const title = hook
     .replace(/^[^:]{1,24}:\s*/, "")
@@ -217,13 +225,14 @@ function buildPreview(lines: string[], vibe: string): Record<string, unknown> {
     .slice(0, 64)
     .trim();
 
-  return {
+  return compactObject({
     title: title || "Their message song",
     hook,
     vibe,
+    customSound,
     estimatedDurationSeconds: Math.min(140, Math.max(58, lines.length * 9)),
     waveformSeed: lines.join("|").length,
-  };
+  });
 }
 
 function compactObject<T extends Record<string, unknown>>(input: T): T {
