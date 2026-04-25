@@ -241,7 +241,7 @@ Use Kie custom mode where possible so title and style can be controlled. The pro
 - **Auth**: Firebase Auth (email + social providers).
 - **Storage**: Firebase Storage for generated audio and cover art.
 - **Billing**: Whop (weekly subscription) via `@whop/sdk`.
-- **Analytics**: PostHog or equivalent.
+- **Analytics**: PostHog for product analytics plus Meta Pixel + Conversions API for paid-social attribution.
 - **Music generation**: Kie.ai Suno API.
 - **Hosting**: Firebase App Hosting (SSR Next.js, single Firebase project for hosting + Firestore + Auth + Storage).
 
@@ -255,7 +255,7 @@ Use Kie custom mode where possible so title and style can be controlled. The pro
 
 ## 13. Data Model
 - **users**: identity, subscription state, timestamps.
-- **projects**: raw input, normalized input, title, selected tone, status.
+- **projects**: raw input, normalized input, title, selected tone, status, checkout ids, Meta attribution ids (`_fbp`, `_fbc`, event ids).
 - **generations**: project_id, provider task id, generation status, output URLs, version label, duration metadata.
 - **subscriptions**: Whop membership id, checkout id, returned plan id, active state, renewal timestamps, price/currency at purchase time.
 - **events**: analytics events for funnel and retention measurement.
@@ -269,6 +269,15 @@ Use Kie custom mode where possible so title and style can be controlled. The pro
 - Track time-to-first-song after payment.
 - Track number of songs created per active subscriber.
 - Track library revisit rate and retention by week.
+
+### 14.1 Meta Ads Attribution Requirements
+- Meta paid acquisition must use a redundant setup: browser Meta Pixel plus server-side Conversions API (CAPI).
+- Generate a unique `event_id` for each conversion action. Send the same id as Pixel `eventID` and CAPI `event_id` for browser/server deduplication.
+- Capture `_fbp`, `_fbc`, `fbclid`, UTM params, landing page, referrer, client IP, and user agent before redirecting to Whop.
+- Fire `InitiateCheckout` from both browser Pixel and server CAPI before leaving the site.
+- Store a separate Purchase `event_id` on the project before redirect. When Whop confirms payment, fire server-side `Purchase` from the webhook using the stored attribution context.
+- Include `event_source_url`, `action_source=website`, value/currency, product id, order id, hashed internal user id, and hashed Whop email when available.
+- Never rely on Whop-hosted checkout alone for attribution; assume the best conversion signal comes from data captured on SongFromText before redirect and replayed from the webhook.
 
 ## 15. Marketing and Ad Alignment
 Because the main acquisition channels are Meta and TikTok ads, the landing page must visually and verbally match the ad promise. The product should never present itself as a generic AI music studio. The ad and page should both emphasize the same narrow concept: turn their messages into a song, using their exact words.
@@ -303,7 +312,7 @@ Because the main acquisition channels are Meta and TikTok ads, the landing page 
 1. Implement landing page and creation flow UI.
 2. Implement input validation and tone selection.
 3. Implement locked preview and hard paywall.
-4. Wire Whop subscription checkout (`@whop/sdk` dynamic weekly renewal plan → `purchase_url`) and webhook handling.
+4. Wire Whop subscription checkout (`@whop/sdk` dynamic weekly renewal plan → `purchase_url`), webhook handling, and Meta Pixel/CAPI deduped checkout attribution.
 5. Implement backend orchestration for Kie generation after payment.
 6. Implement song result screen and my songs library.
 7. Add account, billing, settings, and FAQ pages.

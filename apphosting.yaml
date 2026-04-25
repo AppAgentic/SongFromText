@@ -38,6 +38,10 @@ env:
     secret: WHOP_COMPANY_ID
   - variable: SONG_WEEKLY_PRICE_GBP
     value: "6.99"
+  - variable: META_GRAPH_VERSION
+    value: "v25.0"
 
   # Firebase Admin uses App Hosting's application default credentials.
   # Add KIE_API_KEY here after the real Kie.ai key is created in Secret Manager.
+  # Add NEXT_PUBLIC_META_PIXEL_ID and META_CAPI_ACCESS_TOKEN after Meta Business
+  # Manager has a real dataset/pixel and CAPI token for SongFromText.

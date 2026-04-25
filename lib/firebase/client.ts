@@ -6,6 +6,7 @@
  * Reads from NEXT_PUBLIC_FIREBASE_* env vars.
  */
 import { getApps, getApp, initializeApp, type FirebaseApp } from "firebase/app";
+import { getAuth, type Auth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -17,6 +18,7 @@ const firebaseConfig = {
 };
 
 let _app: FirebaseApp | null = null;
+let _auth: Auth | null = null;
 
 export function getFirebaseApp(): FirebaseApp {
   if (_app) return _app;
@@ -24,4 +26,10 @@ export function getFirebaseApp(): FirebaseApp {
   return _app;
 }
 
-// TODO: export getAuth, getFirestore, getStorage helpers as needed
+export function getFirebaseAuth(): Auth {
+  if (_auth) return _auth;
+  _auth = getAuth(getFirebaseApp());
+  return _auth;
+}
+
+// TODO: export getFirestore, getStorage helpers as needed

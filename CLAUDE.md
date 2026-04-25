@@ -12,7 +12,7 @@ Primary acquisition: Meta + TikTok ads riding the current "text-to-song" viral t
 - **Database / Auth**: Firebase (Firestore + Firebase Auth)
 - **Storage**: Firebase Storage (generated audio + cover art)
 - **Billing**: Whop (weekly subscription, hard paywall, NO free trial) — via `@whop/sdk`
-- **Analytics**: PostHog
+- **Analytics**: PostHog + Meta Pixel/Conversions API for paid-social attribution
 - **Music generation**: Kie.ai Suno API (custom mode so we can enforce verbatim lyrics)
 - **Hosting**: Firebase App Hosting (SSR Next.js, same project as Firestore/Auth/Storage — single Firebase project)
 
@@ -92,6 +92,12 @@ KIE_API_KEY=
 # PostHog
 NEXT_PUBLIC_POSTHOG_KEY=
 NEXT_PUBLIC_POSTHOG_HOST=
+
+# Meta ads attribution
+NEXT_PUBLIC_META_PIXEL_ID=
+META_CAPI_ACCESS_TOKEN=
+META_GRAPH_VERSION=v25.0
+META_TEST_EVENT_CODE=
 ```
 
 ## Core Product Rules (from PRD)
@@ -104,6 +110,7 @@ NEXT_PUBLIC_POSTHOG_HOST=
 ## Key Integration Points
 - **Kie.ai Suno API** — music generation, custom mode (forces our lyrics). Polling or webhook for job completion.
 - **Whop** — weekly subscription via `@whop/sdk`. Create checkout with an inline dynamic renewal plan → redirect to `purchase_url` → webhook activates subscription. Do not require a hardcoded weekly plan id; store the returned checkout id + plan id for reconciliation. Price comes from `SONG_WEEKLY_PRICE_GBP` (default £6.99). HTTPS redirect URLs required — use ngrok for local dev. See `~/.claude/rules/whop-integration.md`.
+- **Meta Ads attribution** — use browser Pixel + server CAPI together. Generate unique event ids per conversion action; send the same id as Pixel `eventID` and CAPI `event_id` for dedupe. Capture `_fbp`, `_fbc`, `fbclid`, UTM params, landing page, referrer, client IP, and user agent before Whop redirect. Send `InitiateCheckout` before redirect and `Purchase` from the Whop webhook using stored project attribution. Do not depend on Whop-hosted checkout alone for attribution.
 - **Firebase** — Firestore collections: `users`, `projects` (input + metadata), `generations` (provider job + assets), `subscriptions`, `events`. Firebase Auth for identity. Firebase Storage for MP3 + cover art assets. Firebase App Hosting serves the Next.js app (SSR) from the same project.
 
 ## Hosting Notes (Firebase App Hosting)
@@ -111,6 +118,7 @@ NEXT_PUBLIC_POSTHOG_HOST=
 - Secrets (WHOP_API_KEY, WHOP_WEBHOOK_SECRET, WHOP_COMPANY_ID, KIE_API_KEY once available, etc.) go in `apphosting.yaml` via `secret:` references, synced from Google Secret Manager.
 - Firebase Admin on App Hosting should use application default credentials rather than checked-in service-account secret refs.
 - Public env vars (NEXT_PUBLIC_*) can be set as plain `env:` values in `apphosting.yaml`.
+- Add `NEXT_PUBLIC_META_PIXEL_ID` and `META_CAPI_ACCESS_TOKEN` only after the Meta dataset/pixel is created. CAPI no-ops without both values.
 - Rollouts are triggered by pushes to the linked branch (default: `main`). Preview channels available per-PR.
 - Custom domain: configure in Firebase console after first rollout.
 

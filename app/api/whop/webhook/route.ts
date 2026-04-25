@@ -8,7 +8,13 @@ import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import type { UnwrapWebhookEvent } from "@whop/sdk/resources/webhooks";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { unwrapWebhook } from "@/lib/whop";
+import {
+  generateMetaEventId,
+  isMetaCapiConfigured,
+  trackCapiPurchase,
+  type MetaRequestContext,
+} from "@/lib/meta/capi";
+import { getWeeklyPriceGbp, unwrapWebhook } from "@/lib/whop";
 
 export const runtime = "nodejs";
 
@@ -101,6 +107,12 @@ const TRACKED_EVENT_TYPES = new Set([
   "invoice.voided",
 ]);
 
+const PURCHASE_CONFIRMATION_EVENT_TYPES = new Set([
+  "membership.activated",
+  "payment.succeeded",
+  "invoice.paid",
+]);
+
 async function claimWebhookEvent(
   db: Firestore,
   eventPath: string,
@@ -181,8 +193,8 @@ async function syncSubscriptionFromWhopEvent(
       getMetadataString(metadata, "checkout_id") ??
       getMetadataString(metadata, "checkoutId") ??
       getMetadataString(metadata, "whop_checkout_id"),
-    whopPaymentId: event.type.startsWith("payment.") ? String(data.id) : undefined,
-    whopInvoiceId: event.type.startsWith("invoice.") ? String(data.id) : undefined,
+    whopPaymentId: event.type.startsWith("payment.") ? getString(data.id) : undefined,
+    whopInvoiceId: event.type.startsWith("invoice.") ? getString(data.id) : undefined,
     cancelAtPeriodEnd: getBoolean(data.cancel_at_period_end),
     canceledAt: toDate(data.canceled_at),
     renewalPeriodStart: toDate(data.renewal_period_start),
@@ -213,6 +225,16 @@ async function syncSubscriptionFromWhopEvent(
     .set(db.collection("users").doc(ownerId), userPatch, { merge: true })
     .commit();
 
+  await trackPurchaseConversionOnce({
+    db,
+    event,
+    data,
+    metadata,
+    ownerId,
+    subscriptionId,
+    active,
+  });
+
   return {
     updated: true,
     ownerId,
@@ -220,6 +242,84 @@ async function syncSubscriptionFromWhopEvent(
     active,
     eventType: event.type,
   };
+}
+
+async function trackPurchaseConversionOnce(params: {
+  db: Firestore;
+  event: UnwrapWebhookEvent;
+  data: WhopEventData;
+  metadata: Record<string, unknown>;
+  ownerId: string;
+  subscriptionId: string;
+  active: boolean;
+}): Promise<void> {
+  if (!params.active || !PURCHASE_CONFIRMATION_EVENT_TYPES.has(params.event.type)) {
+    return;
+  }
+  if (!isMetaCapiConfigured()) return;
+
+  const projectId =
+    getMetadataString(params.metadata, "project_id") ??
+    getMetadataString(params.metadata, "projectId");
+  if (!projectId) return;
+
+  const projectRef = params.db.collection("projects").doc(projectId);
+  const purchase = await params.db.runTransaction(async (transaction) => {
+    const project = await transaction.get(projectRef);
+    if (!project.exists || project.get("meta.purchaseTrackedAt")) return undefined;
+
+    const attribution = asRecord(project.get("attribution"));
+    const metaEventIds = asRecord(project.get("metaEventIds"));
+    const eventSourceUrl =
+      getString(attribution.landingPage) ??
+      getString(project.get("sourceUrl"));
+    if (!eventSourceUrl) return undefined;
+
+    const eventId =
+      getString(metaEventIds.purchase) ??
+      getMetadataString(params.metadata, "meta_purchase_event_id") ??
+      generateMetaEventId("purchase");
+
+    transaction.update(projectRef, {
+      "meta.purchaseTrackedAt": FieldValue.serverTimestamp(),
+      "meta.purchaseWhopEventId": params.event.id,
+      "meta.purchaseWhopEventType": params.event.type,
+      "metaEventIds.purchase": eventId,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return {
+      eventId,
+      eventTime: toUnixSeconds(params.event.timestamp),
+      value: getMetadataNumber(params.metadata, "price_gbp") ?? getWeeklyPriceGbp(),
+      orderId:
+        getString(params.data.id) ??
+        getNestedString(params.data, "membership", "id") ??
+        params.subscriptionId,
+      email: getNestedString(params.data, "user", "email"),
+      eventSourceUrl,
+      context: compactObject({
+        fbp: getString(attribution.fbp),
+        fbc: getString(attribution.fbc),
+        clientIp: getString(attribution.clientIp),
+        clientUserAgent: getString(attribution.clientUserAgent),
+        referrerUrl: getString(attribution.referrer),
+      }) as MetaRequestContext,
+    };
+  });
+
+  if (!purchase) return;
+
+  await trackCapiPurchase({
+    eventId: purchase.eventId,
+    eventTime: purchase.eventTime,
+    value: purchase.value,
+    userId: params.ownerId,
+    orderId: purchase.orderId,
+    email: purchase.email,
+    eventSourceUrl: purchase.eventSourceUrl,
+    context: purchase.context,
+  });
 }
 
 async function findOwnerId(
@@ -345,6 +445,11 @@ function getMetadataNumber(
   if (value === null || value === undefined || value === "") return undefined;
   const numberValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
+function toUnixSeconds(value: unknown): number | undefined {
+  const date = toDate(value);
+  return date ? Math.floor(date.getTime() / 1000) : undefined;
 }
 
 function toDate(value: unknown): Date | undefined {
