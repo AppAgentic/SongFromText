@@ -17,6 +17,8 @@ Sound update:
 - Add `US R&B` as a smoother, polished R&B alternate.
 - Keep a direct `Country` choice for users who expect the current country-pop / country-heartbreak lane from short-form ads.
 - Remove `UK folk` and `Dreamy synth` from the active picker to keep the first test tighter.
+- Sound cards use short sonic tags for scanning; `UK R&B` carries a recommended state.
+- Optional custom sound input lives behind a compact `Refine sound` drawer with one-tap refinement chips.
 - Keep artist names out of public UI/generation prompts and describe the broader sound instead.
 - Keep both routes using the shared `lib/vibes.ts` list so the picker and checkout validation stay in sync.
 

@@ -12,6 +12,7 @@ import {
   LockKeyhole,
   MessageSquareText,
   Music2,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -28,6 +29,14 @@ const MIN_MESSAGES = 5;
 const MIN_CHARS = 40;
 const MAX_CHARS = 2000;
 const CUSTOM_SOUND_MAX_CHARS = 160;
+const SOUND_REFINEMENTS = [
+  "garage drums",
+  "smooth vocal",
+  "female vocal",
+  "more emotional",
+  "bigger chorus",
+  "slower tempo",
+];
 
 const SAMPLE_MESSAGES = [
   "I know I said I was fine but I was not",
@@ -79,7 +88,9 @@ export function SongCreateFunnel({ variant = "builder" }: { variant?: FunnelVari
 
   const selectedVibe = getSongVibe(vibe);
   const trimmedCustomSound = customSound.trim();
-  const soundLabel = trimmedCustomSound || selectedVibe.label;
+  const soundLabel = trimmedCustomSound
+    ? `${selectedVibe.label} + ${trimmedCustomSound}`
+    : selectedVibe.label;
   const isBusy = checkoutState !== "idle";
   const canRevealPrice = stats.ready;
 
@@ -463,50 +474,158 @@ function VibePicker({
   onCustomSoundChange: (sound: string) => void;
   quiz?: boolean;
 }) {
+  const [isCustomOpen, setIsCustomOpen] = useState(Boolean(customSound));
+  const trimmedCustomSound = customSound.trim();
+
+  function addRefinement(refinement: string) {
+    setIsCustomOpen(true);
+    const currentParts = customSound
+      .split(",")
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean);
+    if (currentParts.includes(refinement.toLowerCase())) return;
+
+    const next = trimmedCustomSound
+      ? `${trimmedCustomSound}, ${refinement}`
+      : refinement;
+    onCustomSoundChange(next.slice(0, CUSTOM_SOUND_MAX_CHARS));
+  }
+
   return (
     <section className={cn("space-y-3", quiz && "rounded-[8px] border border-white/10 bg-[#101018] p-4 sm:p-5")}>
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-sm font-medium text-white">Sound</h2>
           <p className="mt-1 text-xs text-white/42">{selectedVibe.badge} / {selectedVibe.detail}</p>
         </div>
+        <div className="max-w-[150px] rounded-[8px] border border-cyan-200/18 bg-cyan-300/8 px-3 py-2 text-right">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/54">Selected</p>
+          <p className="mt-1 truncate text-xs font-medium text-cyan-50">
+            {selectedVibe.label}
+          </p>
+        </div>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {SONG_VIBES.map((item) => (
+
+      <div className="grid grid-cols-2 gap-2">
+        {SONG_VIBES.map((item, index) => {
+          const isSelected = item.id === vibe;
+          const isRecommended = index === 0;
+
+          return (
           <button
             key={item.id}
             type="button"
+            aria-pressed={isSelected}
             onClick={() => onVibeChange(item.id)}
             className={cn(
-              "min-h-20 rounded-[8px] border px-3 py-3 text-left transition",
-              item.id === vibe
-                ? "border-cyan-200/60 bg-cyan-300/12 text-white shadow-[0_0_28px_rgba(34,211,238,0.14)]"
-                : "border-white/10 bg-white/[0.035] text-white/70 hover:border-white/20 hover:bg-white/[0.06]",
+              "group relative min-h-[132px] overflow-hidden rounded-[8px] border px-3 py-3 text-left transition sm:min-h-[116px] sm:px-3.5",
+              isSelected
+                ? "border-cyan-200/65 bg-cyan-300/12 text-white shadow-[0_0_28px_rgba(34,211,238,0.14)]"
+                : "border-white/10 bg-white/[0.035] text-white/72 hover:border-white/20 hover:bg-white/[0.06]",
             )}
           >
-            <span className="block text-sm font-medium">{item.label}</span>
-            <span className="mt-1 block text-xs text-white/42">{item.detail}</span>
+            <span
+              className={cn(
+                "pointer-events-none absolute inset-x-0 top-0 h-0.5 opacity-0 transition",
+                isSelected && "bg-gradient-to-r from-cyan-200 via-pink-300 to-violet-300 opacity-100",
+              )}
+            />
+            <span className="flex items-start justify-between gap-3">
+              <span>
+                <span className="block text-[15px] font-semibold leading-5">{item.label}</span>
+                <span className="mt-1 block text-xs text-white/44">{item.detail}</span>
+              </span>
+              <span
+                className={cn(
+                  "flex size-6 shrink-0 items-center justify-center rounded-full border text-white/0 transition",
+                  isSelected
+                    ? "border-cyan-200/70 bg-cyan-200 text-black"
+                    : "border-white/12 bg-white/[0.03] group-hover:border-white/22",
+                )}
+              >
+                <Check className="size-3.5" aria-hidden />
+              </span>
+            </span>
+            <span className="mt-4 flex flex-wrap gap-1.5">
+              {isRecommended ? (
+                <span className="rounded-full border border-pink-200/24 bg-pink-300/12 px-2 py-1 text-[11px] font-medium text-pink-50">
+                  Recommended
+                </span>
+              ) : null}
+              {item.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full border border-white/8 bg-black/22 px-2 py-1 text-[11px] text-white/48"
+                >
+                  {tag}
+                </span>
+              ))}
+            </span>
           </button>
-        ))}
+          );
+        })}
       </div>
 
-      <div className="rounded-[8px] border border-white/10 bg-black/24 p-3">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <Label htmlFor="custom-sound" className="text-xs font-medium text-white/72">
-            Custom sound
-          </Label>
-          <span className="text-xs text-white/32">
-            {customSound.length}/{CUSTOM_SOUND_MAX_CHARS}
+      <div className="rounded-[8px] border border-white/10 bg-black/24">
+        <button
+          type="button"
+          onClick={() => setIsCustomOpen((current) => !current)}
+          className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition hover:bg-white/[0.035]"
+          aria-expanded={isCustomOpen}
+          aria-controls="custom-sound-panel"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-white/6 text-cyan-100">
+              <SlidersHorizontal className="size-4" aria-hidden />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-white">Refine sound</span>
+              <span className="block truncate text-xs text-white/42">
+                {trimmedCustomSound || "Optional details"}
+              </span>
+            </span>
           </span>
+          <span className="text-xs font-medium text-cyan-100/76">
+            {isCustomOpen ? "Done" : "Edit"}
+          </span>
+        </button>
+
+        <div
+          id="custom-sound-panel"
+          className={cn("space-y-3 border-t border-white/10 p-3", !isCustomOpen && "hidden")}
+        >
+          <div className="flex flex-wrap gap-1.5">
+            {SOUND_REFINEMENTS.map((refinement) => (
+              <button
+                key={refinement}
+                type="button"
+                onClick={() => addRefinement(refinement)}
+                className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-white/66 transition hover:border-cyan-200/35 hover:text-white"
+              >
+                {refinement}
+              </button>
+            ))}
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <Label htmlFor="custom-sound" className="text-xs font-medium text-white/72">
+                Custom sound
+              </Label>
+              <span className="text-xs text-white/32">
+                {customSound.length}/{CUSTOM_SOUND_MAX_CHARS}
+              </span>
+            </div>
+            <Textarea
+              id="custom-sound"
+              value={customSound}
+              onChange={(event) => onCustomSoundChange(event.target.value)}
+              maxLength={CUSTOM_SOUND_MAX_CHARS}
+              placeholder="UK R&B with garage drums, smooth vocal, late-night bass"
+              className="min-h-20 resize-none rounded-[8px] border-white/10 bg-white/[0.035] px-3 py-2.5 text-[15px] leading-6 text-white shadow-none placeholder:text-white/28 focus-visible:border-cyan-300/45 focus-visible:ring-cyan-300/15"
+            />
+          </div>
         </div>
-        <Textarea
-          id="custom-sound"
-          value={customSound}
-          onChange={(event) => onCustomSoundChange(event.target.value)}
-          maxLength={CUSTOM_SOUND_MAX_CHARS}
-          placeholder="UK R&B with garage drums, smooth vocal, late-night bass"
-          className="min-h-20 resize-none border-0 bg-transparent px-0 py-0 text-[15px] leading-6 text-white shadow-none placeholder:text-white/28 focus-visible:ring-0"
-        />
       </div>
     </section>
   );
@@ -700,11 +819,11 @@ function PreviewRow({
   complete: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 text-sm">
+    <div className="flex min-w-0 items-center justify-between gap-4 text-sm">
       <span className="text-white/48">{label}</span>
-      <span className={cn("flex items-center gap-2 text-white", complete && "text-cyan-50")}>
-        {complete ? <Check className="size-3.5 text-cyan-200" aria-hidden /> : null}
-        {value}
+      <span className={cn("flex min-w-0 items-center justify-end gap-2 text-right text-white", complete && "text-cyan-50")}>
+        {complete ? <Check className="size-3.5 shrink-0 text-cyan-200" aria-hidden /> : null}
+        <span className="truncate">{value}</span>
       </span>
     </div>
   );

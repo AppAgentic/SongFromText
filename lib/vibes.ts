@@ -4,6 +4,7 @@ export const SONG_VIBES = [
     label: "UK R&B",
     detail: "late-night groove",
     badge: "Smooth",
+    tags: ["garage drums", "warm bass", "silky vocal"],
     sunoStyle:
       "UK R&B, alt R&B, warm sub bass, syncopated drums, silky intimate vocal, moody chords, late-night mix",
     negativeTags: "country twang, folk ballad, heavy metal, EDM drop, novelty",
@@ -13,6 +14,7 @@ export const SONG_VIBES = [
     label: "US R&B",
     detail: "smooth polish",
     badge: "Silky",
+    tags: ["lush chords", "polished vocal", "clean drums"],
     sunoStyle:
       "US R&B, contemporary R&B, smooth drums, warm bass, lush chords, polished intimate vocal, late-night groove",
     negativeTags: "country twang, folk ballad, heavy metal, EDM drop, novelty",
@@ -22,6 +24,7 @@ export const SONG_VIBES = [
     label: "Sad acoustic",
     detail: "soft guitar",
     badge: "Moonlit",
+    tags: ["fingerpicked", "intimate", "slow build"],
     sunoStyle:
       "emotional acoustic pop, fingerpicked guitar, intimate vocal, soft harmonies, slow tempo, warm room",
     negativeTags: "EDM, rap, trap drums, heavy metal, novelty",
@@ -31,6 +34,7 @@ export const SONG_VIBES = [
     label: "Country",
     detail: "heartbreak twang",
     badge: "Country",
+    tags: ["pedal steel", "warm guitar", "heartfelt"],
     sunoStyle:
       "modern country pop ballad, acoustic guitar, pedal steel, heartfelt vocal, slow-medium tempo, warm mix",
     negativeTags: "EDM, trap, synthpop, heavy metal, comedy vocals",
@@ -40,6 +44,7 @@ export const SONG_VIBES = [
     label: "Pop revenge",
     detail: "big chorus",
     badge: "Sharp",
+    tags: ["punchy drums", "tense verse", "big hook"],
     sunoStyle:
       "dark pop, punchy drums, big chorus, confident vocal, glossy production, tense verses",
     negativeTags: "country twang, folk ballad, heavy metal, lo-fi",
@@ -49,6 +54,7 @@ export const SONG_VIBES = [
     label: "Rap confessional",
     detail: "spoken edge",
     badge: "Raw",
+    tags: ["moody piano", "melodic rap", "raw hook"],
     sunoStyle:
       "melodic rap, confessional vocal, sparse beat, moody piano, intimate delivery, emotional hook",
     negativeTags: "country twang, EDM drop, heavy metal, comedy",
