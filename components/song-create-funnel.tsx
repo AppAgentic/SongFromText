@@ -445,11 +445,11 @@ function VibePicker({
     <section className={cn("space-y-3", quiz && "rounded-[8px] border border-white/10 bg-[#101018] p-4 sm:p-5")}>
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-sm font-medium text-white">Vibe</h2>
+          <h2 className="text-sm font-medium text-white">Sound</h2>
           <p className="mt-1 text-xs text-white/42">{selectedVibe.badge} / {selectedVibe.detail}</p>
         </div>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {SONG_VIBES.map((item) => (
           <button
             key={item.id}
@@ -523,7 +523,7 @@ function LockedPreview({
 
       <div className="mt-5 space-y-3 border-t border-white/10 pt-5">
         <PreviewRow label="Messages" value={stats.count ? `${stats.count} added` : "None yet"} complete={stats.hasEnoughMessages} />
-        <PreviewRow label="Vibe" value={selectedVibe.label} complete />
+        <PreviewRow label="Sound" value={selectedVibe.label} complete />
         <PreviewRow label="Lyrics" value="Exact words" complete={stats.hasMessages} />
       </div>
 
@@ -576,7 +576,7 @@ function LockedPreview({
 }
 
 function QuizStepper({ step }: { step: number }) {
-  const items = ["Messages", "Vibe", "Preview"];
+  const items = ["Messages", "Sound", "Preview"];
 
   return (
     <div className="mb-4 grid grid-cols-3 rounded-[8px] border border-white/10 bg-[#101018] p-1">
@@ -642,7 +642,7 @@ function QuizControls({
         disabled={step === 0 && !stats.ready}
         className="h-12 flex-1 rounded-[8px] bg-white text-base font-semibold text-black hover:bg-white/90"
       >
-        {step === 0 ? (stats.ready ? "Choose vibe" : nextMessageLabel(stats)) : "Preview song"}
+        {step === 0 ? (stats.ready ? "Choose sound" : nextMessageLabel(stats)) : "Preview song"}
         <ArrowRight className="size-4" aria-hidden />
       </Button>
     </div>

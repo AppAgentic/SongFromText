@@ -21,7 +21,7 @@ This PRD defines the scope, UX, business model, technical architecture, and deli
 ## 2. Problem Statement
 Users are seeing social content where someone turns "what he said" or "what she said" into a song. The viral appeal comes from authenticity: the words feel real, recognizable, and emotionally loaded. Existing generic AI music tools require too much prompting, feel broad rather than trend-native, and do not package the result in a conversion-focused funnel.
 
-SongFromText should provide a much simpler, trend-aligned experience: paste the other person's messages, choose a vibe, pay to unlock unlimited usage, and receive songs that preserve those exact words as lyrics.
+SongFromText should provide a much simpler, trend-aligned experience: paste the other person's messages, choose a sound, pay to unlock unlimited usage, and receive songs that preserve those exact words as lyrics.
 
 ## 3. Goals, Non-goals, and Success Criteria
 
@@ -84,7 +84,7 @@ SongFromText should provide a much simpler, trend-aligned experience: paste the 
 1. User lands on the landing page from a Meta or TikTok ad.
 2. User taps primary CTA and reaches the creation screen.
 3. User pastes only the other person's messages into a textarea.
-4. User selects a vibe or accepts the recommended default.
+4. User selects a sound/vibe or accepts the recommended default.
 5. System validates that the input is substantial enough to make a good song.
 6. System shows a processing screen with low-cost progress states.
 7. System shows a locked preview with generated title, tone, and waveform-style teaser.
@@ -103,7 +103,7 @@ SongFromText should provide a much simpler, trend-aligned experience: paste the 
 - Pricing hint can be visible but should not dominate above-the-fold area.
 
 ### 8.2 How It Works / Supportive explainer
-- Three simple steps: paste messages, pick a vibe, get your song.
+- Three simple steps: paste messages, pick a sound, get your song.
 - Keep this section scannable for cold traffic.
 - Do not over-explain AI generation mechanics.
 
@@ -123,7 +123,7 @@ SongFromText should provide a much simpler, trend-aligned experience: paste the 
 - Continue CTA disabled until minimum criteria pass.
 
 ### 8.6 Choose Tone / Genre
-- User selects one of a few large vibe cards, including Country and UK folk/acoustic options for current short-form country and British emotional acoustic trends.
+- User selects one of a few large sound cards, including UK R&B, Country, and UK folk/acoustic options for current short-form genre trends.
 - Keep artist names out of the public UI and generation prompts; describe the broader sound instead.
 - Keep choices intentionally narrow to reduce paralysis.
 
@@ -227,7 +227,7 @@ i'm sorry okay
 Use Kie/Suno Custom Mode for paid generation so the backend controls the title, style, and lyrics separately. In Custom Mode with vocals, the `prompt` should contain the structured lyrics payload, not a general description. The backend should never use simple/non-custom mode for the final song because that mode can auto-generate or rewrite lyrics from a loose idea.
 
 Vibe handling:
-- Treat the user-facing vibe as a compact label only.
+- Treat the user-facing sound/vibe as a compact label only.
 - Map each vibe ID to a backend `style` string that includes genre, mood, instruments, tempo/energy, vocal direction, and production language.
 - Use `negativeTags` to prevent obvious drift, such as rap/trap/EDM on acoustic or country options.
 - Keep artist names out of public UI and generation prompts; describe the broader sound instead.
@@ -310,7 +310,7 @@ Because the main acquisition channels are Meta and TikTok ads, the landing page 
 - If Kie returns partial or delayed results, UI should keep the user informed without exposing raw provider errors.
 
 ## 18. Acceptance Criteria for v1
-- A user can paste multiline text, choose a vibe, and reach a locked preview on mobile.
+- A user can paste multiline text, choose a sound, and reach a locked preview on mobile.
 - No paid generation occurs before checkout succeeds.
 - A paid user receives at least one playable song generated from the exact provided lines.
 - The result view and library are accessible after the generation finishes.

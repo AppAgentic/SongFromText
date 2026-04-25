@@ -47,6 +47,7 @@ Use this generation shape after Whop subscription activation:
 | --- | --- | --- | --- |
 | `sad-acoustic` | Sad acoustic | emotional acoustic pop, fingerpicked guitar, intimate vocal, soft harmonies, slow tempo, warm room | EDM, rap, trap drums, heavy metal, novelty |
 | `uk-folk-country` | UK folk | British indie folk, acoustic guitar, intimate vocal, melancholy build, warm room, cinematic chorus | EDM, trap drums, heavy metal, glossy dance pop, parody |
+| `uk-rnb` | UK R&B | UK R&B, alt R&B, warm sub bass, syncopated drums, silky intimate vocal, moody chords, late-night mix | country twang, folk ballad, heavy metal, EDM drop, novelty |
 | `country-heartbreak` | Country | modern country pop ballad, acoustic guitar, pedal steel, heartfelt vocal, slow-medium tempo, warm mix | EDM, trap, synthpop, heavy metal, comedy vocals |
 | `pop-revenge` | Pop revenge | dark pop, punchy drums, big chorus, confident vocal, glossy production, tense verses | country twang, folk ballad, heavy metal, lo-fi |
 | `dreamy-synth` | Dreamy synth | dreamy synthpop, soft pads, late-night atmosphere, airy vocal, pulsing beat, wide reverb | country twang, acoustic folk, heavy metal, harsh rap |

@@ -18,6 +18,15 @@ export const SONG_VIBES = [
     negativeTags: "EDM, trap drums, heavy metal, glossy dance pop, parody",
   },
   {
+    id: "uk-rnb",
+    label: "UK R&B",
+    detail: "late-night groove",
+    badge: "Smooth",
+    sunoStyle:
+      "UK R&B, alt R&B, warm sub bass, syncopated drums, silky intimate vocal, moody chords, late-night mix",
+    negativeTags: "country twang, folk ballad, heavy metal, EDM drop, novelty",
+  },
+  {
     id: "country-heartbreak",
     label: "Country",
     detail: "heartbreak twang",
