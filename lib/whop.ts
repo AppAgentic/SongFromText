@@ -80,7 +80,7 @@ export async function createCheckout(
       billing_period: BILLING_PERIOD_DAYS,
       plan_type: "renewal",
       trial_period_days: 0,
-      title: `SongFromText Weekly - £${priceGbp.toFixed(2)}/week`,
+      title: "SongFromText Weekly",
       description: "Weekly subscription for SongFromText song generation.",
       product: {
         external_identifier: PRODUCT_EXTERNAL_IDENTIFIER,
