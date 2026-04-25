@@ -12,4 +12,10 @@ Variant route: `/quiz`
 - Step 2: vibe.
 - Step 3: locked preview and checkout.
 
+Vibe update:
+- Keep a direct `Country` choice for users who expect the current country-pop / country-heartbreak lane from short-form ads.
+- Add `UK folk` as the Amber Run-adjacent lane: British, acoustic, intimate, and emotional rather than full Nashville country.
+- Keep artist names out of public UI/generation prompts and describe the broader sound instead.
+- Keep both routes using the shared `lib/vibes.ts` list so the picker and checkout validation stay in sync.
+
 Generated direction reference: `docs/design/mobile-flow-direction.png`.

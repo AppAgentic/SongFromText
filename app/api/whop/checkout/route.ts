@@ -14,17 +14,10 @@ import {
   trackCapiInitiateCheckout,
 } from "@/lib/meta/capi";
 import { PastedInputSchema } from "@/lib/validation";
+import { VIBE_VALUES } from "@/lib/vibes";
 import { createCheckout } from "@/lib/whop";
 
 export const runtime = "nodejs";
-
-const VIBE_VALUES = [
-  "sad-acoustic",
-  "pop-revenge",
-  "dreamy-synth",
-  "rap-confessional",
-  "country-heartbreak",
-] as const;
 
 const CheckoutRequestSchema = PastedInputSchema.extend({
   vibe: z.enum(VIBE_VALUES),

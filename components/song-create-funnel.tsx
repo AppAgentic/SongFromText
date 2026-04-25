@@ -22,18 +22,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { getMetaAttribution, trackMetaPixelEvent } from "@/lib/meta/client";
 import { cn } from "@/lib/utils";
+import { SONG_VIBES, type VibeId } from "@/lib/vibes";
 
 const MIN_MESSAGES = 5;
 const MIN_CHARS = 40;
 const MAX_CHARS = 2000;
-
-const VIBES = [
-  { id: "sad-acoustic", label: "Sad acoustic", detail: "soft guitar", badge: "Moonlit" },
-  { id: "pop-revenge", label: "Pop revenge", detail: "big chorus", badge: "Sharp" },
-  { id: "dreamy-synth", label: "Dreamy synth", detail: "late night", badge: "Glow" },
-  { id: "rap-confessional", label: "Rap confessional", detail: "spoken edge", badge: "Raw" },
-  { id: "country-heartbreak", label: "Country heartbreak", detail: "raw twang", badge: "Dusty" },
-] as const;
 
 const SAMPLE_MESSAGES = [
   "I know I said I was fine but I was not",
@@ -44,7 +37,6 @@ const SAMPLE_MESSAGES = [
 ];
 
 type CheckoutState = "idle" | "creating" | "redirecting";
-type VibeId = (typeof VIBES)[number]["id"];
 type FunnelVariant = "builder" | "quiz";
 
 interface MessageStats {
@@ -83,7 +75,7 @@ export function SongCreateFunnel({ variant = "builder" }: { variant?: FunnelVari
     };
   }, [messages]);
 
-  const selectedVibe = VIBES.find((item) => item.id === vibe) ?? VIBES[0];
+  const selectedVibe = SONG_VIBES.find((item) => item.id === vibe) ?? SONG_VIBES[0];
   const isBusy = checkoutState !== "idle";
   const canRevealPrice = stats.ready;
 
@@ -445,7 +437,7 @@ function VibePicker({
   quiz = false,
 }: {
   vibe: VibeId;
-  selectedVibe: (typeof VIBES)[number];
+  selectedVibe: (typeof SONG_VIBES)[number];
   onVibeChange: (vibe: VibeId) => void;
   quiz?: boolean;
 }) {
@@ -457,8 +449,8 @@ function VibePicker({
           <p className="mt-1 text-xs text-white/42">{selectedVibe.badge} / {selectedVibe.detail}</p>
         </div>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        {VIBES.map((item) => (
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+        {SONG_VIBES.map((item) => (
           <button
             key={item.id}
             type="button"
@@ -490,7 +482,7 @@ function LockedPreview({
   showAction = true,
 }: {
   stats: MessageStats;
-  selectedVibe: (typeof VIBES)[number];
+  selectedVibe: (typeof SONG_VIBES)[number];
   checkoutState: CheckoutState;
   error: string | null;
   onCheckout: () => void;

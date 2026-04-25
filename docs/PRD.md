@@ -117,14 +117,14 @@ SongFromText should provide a much simpler, trend-aligned experience: paste the 
 - Tone should be concise and confidence-building.
 
 ### 8.5 Create: Paste Messages
-- Large textarea with placeholder examples.
+- Mobile-first message-by-message composer, with multiline paste splitting into editable message rows.
 - Helper text: only paste one person's messages.
 - Character counter or line count.
 - Continue CTA disabled until minimum criteria pass.
 
 ### 8.6 Choose Tone / Genre
-- User selects one of a few large tone cards: Emotional, Funny, Dramatic, Savage.
-- Genre can default to auto-detect with optional override.
+- User selects one of a few large vibe cards, including Country and UK folk/acoustic options for current short-form country and British emotional acoustic trends.
+- Keep artist names out of the public UI and generation prompts; describe the broader sound instead.
 - Keep choices intentionally narrow to reduce paralysis.
 
 ### 8.7 Input Validation
