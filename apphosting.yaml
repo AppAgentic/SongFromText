@@ -44,6 +44,7 @@ env:
     secret: META_CAPI_ACCESS_TOKEN
   - variable: META_GRAPH_VERSION
     value: "v25.0"
+  - variable: KIE_API_KEY
+    secret: KIE_API_KEY
 
   # Firebase Admin uses App Hosting's application default credentials.
-  # Add KIE_API_KEY here after the real Kie.ai key is created in Secret Manager.
