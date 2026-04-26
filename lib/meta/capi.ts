@@ -33,7 +33,7 @@ interface MetaUserData {
 }
 
 interface MetaEvent {
-  event_name: "InitiateCheckout" | "Purchase";
+  event_name: "Lead" | "InitiateCheckout" | "Purchase";
   event_time: number;
   event_id: string;
   event_source_url?: string;
@@ -41,7 +41,7 @@ interface MetaEvent {
   action_source: "website";
   user_data: MetaUserData;
   custom_data: {
-    value: number;
+    value?: number;
     currency: "GBP";
     content_ids: string[];
     content_name: string;
@@ -108,6 +108,27 @@ export async function trackCapiInitiateCheckout(params: {
   ]);
 }
 
+export async function trackCapiLead(params: {
+  eventId: string;
+  eventTime?: number;
+  userId?: string;
+  email: string;
+  eventSourceUrl?: string;
+  context: MetaRequestContext;
+}): Promise<void> {
+  await sendMetaEvents([
+    buildEvent({
+      eventName: "Lead",
+      eventId: params.eventId,
+      eventTime: params.eventTime,
+      userId: params.userId,
+      email: params.email,
+      eventSourceUrl: params.eventSourceUrl,
+      context: params.context,
+    }),
+  ]);
+}
+
 export async function trackCapiPurchase(params: {
   eventId: string;
   eventTime?: number;
@@ -134,13 +155,13 @@ export async function trackCapiPurchase(params: {
 }
 
 function buildEvent(params: {
-  eventName: "InitiateCheckout" | "Purchase";
+  eventName: "Lead" | "InitiateCheckout" | "Purchase";
   eventId: string;
   eventTime?: number;
-  value: number;
-  userId: string;
+  value?: number;
+  userId?: string;
   email?: string;
-  orderId: string;
+  orderId?: string;
   eventSourceUrl?: string;
   context: MetaRequestContext;
 }): MetaEvent {
@@ -154,7 +175,7 @@ function buildEvent(params: {
     referrer_url: params.context.referrerUrl,
     action_source: "website",
     user_data: compactObject({
-      external_id: [hashSha256(params.userId)],
+      external_id: params.userId ? [hashSha256(params.userId)] : undefined,
       em: params.email ? [hashSha256(params.email)] : undefined,
       fbp: params.context.fbp,
       fbc: params.context.fbc,

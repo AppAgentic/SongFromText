@@ -6,7 +6,7 @@ Turn pasted messages into AI-generated songs using their exact words as lyrics.
 
 ## Stack
 
-Next.js (App Router) · TypeScript · Tailwind CSS · shadcn/ui · Firebase (Auth + Firestore + Storage) · Whop (billing) · Kie.ai Suno (music generation) · PostHog (analytics) · Firebase App Hosting
+Next.js (App Router) · TypeScript · Tailwind CSS · shadcn/ui · Firebase (Auth + Firestore + Storage + Analytics) · Whop (billing) · Kie.ai Suno (music generation) · Meta Pixel/CAPI (ads attribution) · Firebase App Hosting
 
 ## Quick start
 

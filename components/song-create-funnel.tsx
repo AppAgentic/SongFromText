@@ -15,10 +15,10 @@ import {
 } from "lucide-react";
 import { signInAnonymously } from "firebase/auth";
 import { Button } from "@/components/ui/button";
+import { identifyFirebaseAnalyticsUser, trackFirebaseAnalyticsEvent } from "@/lib/firebase/analytics";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { structureLyrics } from "@/lib/lyrics";
 import { getMetaAttribution, trackMetaPixelEvent } from "@/lib/meta/client";
-import { initPostHogClient, posthog } from "@/lib/posthog-client";
 import {
   CUSTOM_SOUND_MAX_CHARS,
   KIE_LYRICS_PROMPT_MAX_CHARS,
@@ -403,6 +403,7 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
         message_count: stats.count,
         char_count: stats.chars,
       });
+      trackLeadConversion(nextEmail.trim().toLowerCase());
     }
   }
 
@@ -445,6 +446,7 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
       const credential = auth.currentUser
         ? { user: auth.currentUser }
         : await signInAnonymously(auth);
+      identifyFirebaseAnalyticsUser(credential.user.uid);
       const token = await credential.user.getIdToken();
 
       const response = await fetch("/api/whop/checkout", {
@@ -726,14 +728,51 @@ function trackFunnelEvent(eventName: string, properties: Record<string, unknown>
   if (typeof window === "undefined") return;
 
   try {
-    initPostHogClient();
-    posthog.capture(eventName, {
+    trackFirebaseAnalyticsEvent(eventName, {
       product: "songfromtext",
       ...properties,
     });
   } catch {
     // Analytics should never block the creator flow.
   }
+}
+
+function trackLeadConversion(email: string): void {
+  if (typeof window === "undefined") return;
+
+  const eventId = buildBrowserEventId("lead");
+  const attribution = getMetaAttribution();
+
+  trackMetaPixelEvent(
+    "Lead",
+    {
+      content_ids: ["songfromtext-weekly"],
+      content_name: "SongFromText Weekly",
+      content_type: "product",
+      currency: "GBP",
+    },
+    eventId,
+  );
+
+  void fetch("/api/meta/lead", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      email,
+      eventId,
+      attribution,
+    }),
+  }).catch(() => {
+    // Conversion tracking should never block the creator flow.
+  });
+}
+
+function buildBrowserEventId(prefix: string): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `${prefix}_${crypto.randomUUID()}`;
+  }
+
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
 function isValidEmail(value: string): boolean {

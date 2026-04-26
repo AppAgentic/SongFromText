@@ -251,7 +251,7 @@ See `docs/plans/suno-style-research.md` for the current source-backed mapping dr
 - **Auth**: Firebase Auth (email + social providers).
 - **Storage**: Firebase Storage for generated audio and cover art.
 - **Billing**: Whop (weekly subscription) via `@whop/sdk`.
-- **Analytics**: PostHog for product analytics plus Meta Pixel + Conversions API for paid-social attribution.
+- **Analytics**: Firebase Analytics for product/funnel analytics plus Meta Pixel + Conversions API for paid-social attribution.
 - **Music generation**: Kie.ai Suno API.
 - **Hosting**: Firebase App Hosting (SSR Next.js, single Firebase project for hosting + Firestore + Auth + Storage).
 
@@ -268,9 +268,10 @@ See `docs/plans/suno-style-research.md` for the current source-backed mapping dr
 - **projects**: raw input, normalized input, title, selected tone, status, checkout ids, Meta attribution ids (`_fbp`, `_fbc`, event ids).
 - **generations**: project_id, provider task id, generation status, output URLs, version label, duration metadata.
 - **subscriptions**: Whop membership id, checkout id, returned plan id, active state, renewal timestamps, price/currency at purchase time.
-- **events**: analytics events for funnel and retention measurement.
+- **events**: webhook/idempotency logs; product funnel analytics live in Firebase Analytics.
 
 ## 14. Analytics and Measurement
+- Use Firebase Analytics as the product analytics source of truth for agentic querying and funnel analysis.
 - Track landing page CTA click rate.
 - Track input completion rate.
 - Track validation failure rate.
@@ -284,6 +285,7 @@ See `docs/plans/suno-style-research.md` for the current source-backed mapping dr
 - Meta paid acquisition must use a redundant setup: browser Meta Pixel plus server-side Conversions API (CAPI).
 - Generate a unique `event_id` for each conversion action. Send the same id as Pixel `eventID` and CAPI `event_id` for browser/server deduplication.
 - Capture `_fbp`, `_fbc`, `fbclid`, UTM params, landing page, referrer, client IP, and user agent before redirecting to Whop.
+- Fire `Lead` from both browser Pixel and server CAPI when a valid email is captured.
 - Fire `InitiateCheckout` from both browser Pixel and server CAPI before leaving the site.
 - Store a separate Purchase `event_id` on the project before redirect. When Whop confirms payment, fire server-side `Purchase` from the webhook using the stored attribution context.
 - Include `event_source_url`, `action_source=website`, value/currency, product id, order id, hashed internal user id, and hashed Whop email when available.

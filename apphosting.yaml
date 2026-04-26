@@ -24,8 +24,7 @@ env:
     value: "872851323679"
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
     value: "1:872851323679:web:1e5f2cc35d42e917a8ce2a"
-  - variable: NEXT_PUBLIC_POSTHOG_HOST
-    value: "https://eu.i.posthog.com"
+  # Set NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID after Firebase Analytics/GA4 is enabled.
   - variable: NEXT_PUBLIC_META_PIXEL_ID
     value: "2135051210609761"
 
