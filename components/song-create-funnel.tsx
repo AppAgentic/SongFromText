@@ -49,6 +49,14 @@ const SAMPLE_MESSAGES = [
 type CheckoutState = "idle" | "creating" | "redirecting";
 type FunnelVariant = "builder" | "quiz";
 
+interface CheckoutResponsePayload {
+  purchase_url?: string;
+  meta_event_id?: string;
+  price_gbp?: number;
+  error?: string;
+  issues?: Record<string, string[] | undefined>;
+}
+
 interface MessageStats {
   chars: number;
   count: number;
@@ -152,13 +160,7 @@ export function SongCreateFunnel({ variant = "builder" }: { variant?: FunnelVari
         }),
       });
 
-      const payload = await response.json() as {
-        purchase_url?: string;
-        meta_event_id?: string;
-        price_gbp?: number;
-        error?: string;
-        issues?: Record<string, string[] | undefined>;
-      };
+      const payload = await readJsonResponse<CheckoutResponsePayload>(response);
 
       if (!response.ok || !payload.purchase_url) {
         const firstIssue = payload.issues
@@ -302,6 +304,30 @@ export function SongCreateFunnel({ variant = "builder" }: { variant?: FunnelVari
       </div>
     </FunnelShell>
   );
+}
+
+async function readJsonResponse<T extends { error?: string }>(
+  response: Response,
+): Promise<T> {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    return {
+      error: response.ok
+        ? "Server returned an empty response."
+        : `Server returned ${response.status}.`,
+    } as T;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return {
+      error: response.ok
+        ? "Server returned an unreadable response."
+        : `Server returned ${response.status}.`,
+    } as T;
+  }
 }
 
 function FunnelShell({
