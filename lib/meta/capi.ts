@@ -89,6 +89,7 @@ export async function trackCapiInitiateCheckout(params: {
   eventTime?: number;
   value: number;
   userId: string;
+  email?: string;
   eventSourceUrl?: string;
   context: MetaRequestContext;
 }): Promise<void> {
@@ -99,6 +100,7 @@ export async function trackCapiInitiateCheckout(params: {
       eventTime: params.eventTime,
       value: params.value,
       userId: params.userId,
+      email: params.email,
       eventSourceUrl: params.eventSourceUrl,
       orderId: params.eventId,
       context: params.context,

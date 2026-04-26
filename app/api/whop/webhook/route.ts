@@ -270,6 +270,7 @@ async function trackPurchaseConversionOnce(params: {
 
     const attribution = asRecord(project.get("attribution"));
     const metaEventIds = asRecord(project.get("metaEventIds"));
+    const projectEmail = getString(project.get("email"));
     const eventSourceUrl =
       getString(attribution.landingPage) ??
       getString(project.get("sourceUrl"));
@@ -296,7 +297,7 @@ async function trackPurchaseConversionOnce(params: {
         getString(params.data.id) ??
         getNestedString(params.data, "membership", "id") ??
         params.subscriptionId,
-      email: getNestedString(params.data, "user", "email"),
+      email: getNestedString(params.data, "user", "email") ?? projectEmail,
       eventSourceUrl,
       context: compactObject({
         fbp: getString(attribution.fbp),

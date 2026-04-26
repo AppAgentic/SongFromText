@@ -21,6 +21,7 @@ export const runtime = "nodejs";
 
 const CheckoutRequestSchema = PastedInputSchema.extend({
   vibe: z.enum(VIBE_VALUES),
+  email: z.string().trim().toLowerCase().email().max(254),
   customSound: z.string().trim().max(160).optional(),
   attribution: z
     .object({
@@ -71,6 +72,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const projectRef = db.collection("projects").doc();
   const userRef = db.collection("users").doc(uid);
   const text = parsed.data.text.trim();
+  const email = parsed.data.email;
   const customSound = parsed.data.customSound?.trim() || undefined;
   const lines = getLines(text);
   const origin = getRequestOrigin(req);
@@ -88,6 +90,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     status: "checkout_creating",
     generationStatus: "not_started",
     inputText: text,
+    email,
     vibe: parsed.data.vibe,
     customSound: customSound ?? null,
     preview,
@@ -168,6 +171,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       {
         lastProjectId: projectRef.id,
         lastWhopCheckoutId: checkout.id,
+        email,
         subscriptionProvider: "whop",
         subscriptionActive: false,
         updatedAt: FieldValue.serverTimestamp(),
@@ -181,6 +185,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     eventTime: initiateCheckoutEventTime,
     value: checkout.price_gbp,
     userId: uid,
+    email,
     eventSourceUrl: attribution?.landingPage ?? sourceUrl,
     context: metaContext,
   });
