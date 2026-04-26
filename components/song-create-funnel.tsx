@@ -63,6 +63,21 @@ const SOUND_REFINEMENT_CHIPS = [
   "more dramatic",
 ];
 
+const DESKTOP_WORKFLOW_STEPS = [
+  {
+    label: "Messages",
+    detail: "Paste the exact words",
+  },
+  {
+    label: "Sound",
+    detail: "Choose the genre",
+  },
+  {
+    label: "Unlock",
+    detail: "Save and continue",
+  },
+] as const;
+
 const SOUND_CARDS: Array<{
   id: VibeId;
   label: string;
@@ -1389,56 +1404,107 @@ function DesktopCreator({
   onEmailChange: (email: string) => void;
   onCheckout: () => void;
 }) {
+  const desktopStep = Math.min(Math.max(step, 1), 3);
+  const activeWorkflowIndex = desktopStep - 1;
+  const stepCaption = isPreviewProcessing
+    ? "Building preview"
+    : step === 0
+      ? "Start with the story"
+      : `Step ${desktopStep} of 3`;
+
   return (
-    <div className="relative mx-auto hidden min-h-[100dvh] w-full max-w-7xl grid-cols-[minmax(320px,0.86fr)_minmax(560px,1.14fr)] items-center gap-10 px-8 py-8 xl:grid xl:gap-14">
-      <aside className="max-w-xl">
-        <Link href="/" className="text-sm font-semibold tracking-[0.18em] text-[#8a6870]">
-          SONGFROMTEXT
-        </Link>
-        <h1 className="mt-5 max-w-lg font-serif text-[4.6rem] leading-[0.92] text-[#251d23] xl:text-[5.4rem]">
-          Turn their messages into a song.
-        </h1>
-        <p className="mt-6 max-w-md text-[17px] leading-8 text-[#675b61]">
-          Add the exact words they sent, pick the sound, then unlock a full song made from the story.
-        </p>
+    <div className="relative mx-auto hidden min-h-[100dvh] w-full max-w-[1440px] grid-cols-[300px_minmax(0,1fr)] items-stretch gap-6 px-6 py-6 xl:grid">
+      <aside className="relative flex min-h-[720px] overflow-hidden rounded-[32px] border border-white/10 bg-[#251d23] p-6 text-white shadow-[0_28px_90px_rgba(47,33,42,0.18)]">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(255,155,143,0.22),rgba(255,155,143,0))]" />
+        <div className="relative flex min-h-full w-full flex-col">
+          <Link href="/" className="text-xs font-semibold tracking-[0.22em] text-white/60">
+            SONGFROMTEXT
+          </Link>
 
-        <div className="mt-8 grid max-w-md grid-cols-3 gap-2">
-          {["Add messages", "Pick sound", "Unlock"].map((label, index) => (
-            <div
-              key={label}
-              className={cn(
-                "rounded-[16px] border px-3 py-3 text-sm font-semibold transition",
-                index + 1 <= Math.max(step, 1)
-                  ? "border-[#e7cfd7] bg-white/70 text-[#2a2228] shadow-[0_14px_40px_rgba(42,32,24,0.06)]"
-                  : "border-[#eadfd7] bg-white/36 text-[#8a7d83]",
-              )}
-            >
-              <span className="mb-2 grid size-7 place-items-center rounded-full bg-[#f4dfe7] text-xs text-[#a43363]">
-                {index + 1}
-              </span>
-              {label}
+          <div className="mt-10">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#ffb2ab]">Creator workspace</p>
+            <h1 className="mt-3 font-serif text-[2.85rem] leading-[0.96] text-white">
+              Turn their messages into a song.
+            </h1>
+            <p className="mt-5 text-sm leading-6 text-white/64">
+              Build the preview first. Keep their words exact while the setup stays fast.
+            </p>
+          </div>
+
+          <div className="mt-9 space-y-2">
+            {DESKTOP_WORKFLOW_STEPS.map((workflowStep, index) => {
+              const isActive = index === activeWorkflowIndex;
+              const isComplete = index < activeWorkflowIndex;
+
+              return (
+                <div
+                  key={workflowStep.label}
+                  className={cn(
+                    "grid grid-cols-[34px_minmax(0,1fr)] gap-3 rounded-[18px] border px-3 py-3 transition",
+                    isActive
+                      ? "border-white/18 bg-white/[0.11] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                      : "border-transparent bg-transparent",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "grid size-8 place-items-center rounded-full text-xs font-semibold",
+                      isComplete
+                        ? "bg-[#f4dfe7] text-[#8d2f62]"
+                        : isActive
+                          ? "bg-white text-[#251d23]"
+                          : "bg-white/10 text-white/50",
+                    )}
+                  >
+                    {isComplete ? <Check className="size-4" aria-hidden /> : index + 1}
+                  </span>
+                  <span>
+                    <span className="block text-sm font-semibold text-white">{workflowStep.label}</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-white/52">{workflowStep.detail}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-auto rounded-[24px] border border-white/10 bg-white/[0.07] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+            <p className="font-serif text-2xl leading-tight text-white">{customerFriendlyStatus(step)}</p>
+            <div className="mt-5 grid gap-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-white/52">Messages</span>
+                <span className="font-semibold text-white">{stats.count}/{MIN_MESSAGES}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-white/52">Sound</span>
+                <span className="max-w-[9rem] truncate font-semibold text-white">{soundLabel}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-white/52">Lyrics</span>
+                <span className="font-semibold text-white">Exact words</span>
+              </div>
             </div>
-          ))}
-        </div>
-
-        <div className="mt-8 max-w-md rounded-[24px] border border-[#eadfd7] bg-white/60 p-5 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
-          <p className="font-serif text-2xl leading-tight text-[#251d23]">{customerFriendlyStatus(step)}</p>
-          <div className="mt-5 space-y-3 text-sm text-[#4f454b]">
-            <ProofRow label="Your wording stays exact" />
-            <ProofRow label="Email saves your result" />
-            <ProofRow label="Preview first, full song after unlock" />
+            <div className="mt-5 space-y-2 border-t border-white/10 pt-4 text-sm text-white/72">
+              <div className="flex items-center gap-2">
+                <Check className="size-4 text-[#ffb2ab]" aria-hidden />
+                No rewriting
+              </div>
+              <div className="flex items-center gap-2">
+                <Check className="size-4 text-[#ffb2ab]" aria-hidden />
+                Email capture before unlock
+              </div>
+            </div>
           </div>
         </div>
       </aside>
 
-      <section className="overflow-hidden rounded-[34px] border border-[#eadfd7] bg-[#fffaf5] shadow-[0_30px_100px_rgba(47,33,42,0.14)]">
-        <div className="flex items-center justify-between border-b border-[#eadfd7] px-6 py-5">
+      <section className="min-h-[720px] overflow-hidden rounded-[34px] border border-[#eadfd7] bg-[#fffaf5] shadow-[0_30px_100px_rgba(47,33,42,0.14)]">
+        <div className="flex items-center justify-between border-b border-[#eadfd7] px-7 py-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#9c7b83]">
               Create your song
             </p>
             <p className="mt-1 text-sm text-[#74686f]">
-              {isPreviewProcessing ? "Building preview" : step === 0 ? "Start with the story" : `Step ${step} of 3`}
+              {stepCaption}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1458,7 +1524,7 @@ function DesktopCreator({
           </div>
         </div>
 
-        <div className="min-h-[650px] p-6">
+        <div className="min-h-[640px] p-7">
           {step === 0 ? <DesktopHookStep onStart={onStart} /> : null}
           {step === 1 ? (
             <DesktopMessagesStep
