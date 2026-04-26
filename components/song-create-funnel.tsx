@@ -1000,30 +1000,20 @@ function MessageBubble({
   index: number;
   onRemove: () => void;
 }) {
-  const first = index === 0;
-
   return (
     <div
-      className={cn(
-        "grid min-h-[58px] grid-cols-[minmax(0,1fr)_32px] items-center gap-2 rounded-[14px] border px-4 py-2.5 shadow-[0_12px_28px_rgba(42,32,24,0.06)]",
-        first
-          ? "ml-9 rounded-bl-[5px] border-[#d0a9e2] bg-[#cba0df] text-[#241227]"
-          : "border-[#e2d8d0] bg-[#fffdfb] text-[#2a2228]",
-      )}
+      className="grid min-h-[58px] grid-cols-[minmax(0,1fr)_32px] items-center gap-2 rounded-[14px] border border-[#e2d8d0] bg-[#fffdfb] px-4 py-2.5 text-[#2a2228] shadow-[0_12px_28px_rgba(42,32,24,0.06)]"
     >
       <div className="min-w-0">
         <p className="text-[15px] leading-5">{message}</p>
-        <p className={cn("mt-1 text-right text-[10px]", first ? "text-[#4c3652]/70" : "text-[#9b8f95]")}>
+        <p className="mt-1 text-right text-[10px] text-[#9b8f95]">
           10:{47 + index} PM
         </p>
       </div>
       <button
         type="button"
         onClick={onRemove}
-        className={cn(
-          "grid size-8 place-items-center rounded-full transition active:scale-[0.96]",
-          first ? "text-[#5d3e64] hover:bg-white/18" : "text-[#8b7d84] hover:bg-[#f3ece6]",
-        )}
+        className="grid size-8 place-items-center rounded-full text-[#8b7d84] transition hover:bg-[#f3ece6] active:scale-[0.96]"
         aria-label="Remove message"
       >
         <X className="size-4" aria-hidden />
