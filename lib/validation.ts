@@ -4,15 +4,19 @@
  *
  * Rules:
  *   - At least 5 non-empty lines.
- *   - Total text length between 40 and 2000 characters.
+ *   - Maximum 10 non-empty lines.
+ *   - Prepared Kie/Suno lyrics prompt must fit the provider character budget.
  *   - Reject low-information inputs (single repeated word, only emojis, only URLs).
  *   - Strip PII-like patterns? (NO — PRD says exact words, users accept the risk.)
  */
 import { z } from "zod";
-
-const MIN_LINES = 5;
-const MIN_CHARS = 40;
-const MAX_CHARS = 2000;
+import { structureLyrics } from "@/lib/lyrics";
+import {
+  KIE_LYRICS_PROMPT_MAX_CHARS,
+  MAX_MESSAGE_LINES,
+  MIN_MESSAGE_CHARS,
+  MIN_MESSAGE_LINES,
+} from "@/lib/song-limits";
 
 export const PastedInputSchema = z
   .object({
@@ -20,26 +24,26 @@ export const PastedInputSchema = z
   })
   .superRefine((data, ctx) => {
     const text = data.text.trim();
-    if (text.length < MIN_CHARS) {
+    if (text.length < MIN_MESSAGE_CHARS) {
       ctx.addIssue({
         code: "custom",
         path: ["text"],
-        message: `Needs at least ${MIN_CHARS} characters. Paste a bit more.`,
-      });
-    }
-    if (text.length > MAX_CHARS) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["text"],
-        message: `Too long — keep it under ${MAX_CHARS} characters.`,
+        message: `Needs at least ${MIN_MESSAGE_CHARS} characters. Paste a bit more.`,
       });
     }
     const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    if (lines.length < MIN_LINES) {
+    if (lines.length < MIN_MESSAGE_LINES) {
       ctx.addIssue({
         code: "custom",
         path: ["text"],
-        message: `Needs at least ${MIN_LINES} message lines.`,
+        message: `Needs at least ${MIN_MESSAGE_LINES} message lines.`,
+      });
+    }
+    if (lines.length > MAX_MESSAGE_LINES) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["text"],
+        message: `Use ${MAX_MESSAGE_LINES} or fewer message lines.`,
       });
     }
     if (lines.length > 0 && isLowInformation(lines)) {
@@ -47,6 +51,14 @@ export const PastedInputSchema = z
         code: "custom",
         path: ["text"],
         message: "Paste real messages — a song needs actual words.",
+      });
+    }
+    const preparedLyricsLength = structureLyrics({ text }).formatted.length;
+    if (preparedLyricsLength > KIE_LYRICS_PROMPT_MAX_CHARS) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["text"],
+        message: `Too long — the prepared lyrics must stay under ${KIE_LYRICS_PROMPT_MAX_CHARS} characters.`,
       });
     }
   });

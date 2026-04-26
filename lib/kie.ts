@@ -5,6 +5,11 @@
  *
  * ECONOMIC RULE: do not call this client before Whop checkout succeeds (PRD §3).
  */
+import {
+  KIE_LYRICS_PROMPT_MAX_CHARS,
+  KIE_STYLE_MAX_CHARS,
+  KIE_TITLE_MAX_CHARS,
+} from "@/lib/song-limits";
 
 export type KieJobStatus = "queued" | "running" | "succeeded" | "failed";
 
@@ -47,10 +52,17 @@ export interface CreateGenerationJobInput {
 export async function createGenerationJob(
   input: CreateGenerationJobInput,
 ): Promise<KieJob> {
+  const lyrics = input.lyrics.trim();
+  if (lyrics.length > KIE_LYRICS_PROMPT_MAX_CHARS) {
+    throw new Error(
+      `Lyrics exceed Kie/Suno prompt limit (${lyrics.length}/${KIE_LYRICS_PROMPT_MAX_CHARS} characters).`,
+    );
+  }
+
   const payload = {
-    prompt: clamp(input.lyrics.trim(), 5000),
-    style: clamp(input.style.trim(), 1000),
-    title: clamp(input.title?.trim() || "Their Message Song", 80),
+    prompt: lyrics,
+    style: clamp(input.style.trim(), KIE_STYLE_MAX_CHARS),
+    title: clamp(input.title?.trim() || "Their Message Song", KIE_TITLE_MAX_CHARS),
     customMode: true,
     instrumental: false,
     model: input.model ?? process.env.KIE_SUNO_MODEL ?? "V4_5",

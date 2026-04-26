@@ -8,6 +8,7 @@
  *   - Auto-detect a "hook line" from the rawest, most repeated or emotionally
  *     weighted phrase. If none, fall back to the opening line.
  */
+import { KIE_TITLE_MAX_CHARS } from "@/lib/song-limits";
 
 export interface RawMessageInput {
   /** The full block of pasted text. One message per non-empty line. */
@@ -101,8 +102,13 @@ function titleFromHook(hook: string): string {
     .trim();
 
   if (!cleaned) return "Their Message";
-  const title = cleaned.length > 64 ? cleaned.slice(0, 61).trimEnd() + "..." : cleaned;
-  return title.length > 80 ? title.slice(0, 80).trimEnd() : title;
+  const previewLength = Math.min(64, KIE_TITLE_MAX_CHARS);
+  const title = cleaned.length > previewLength
+    ? cleaned.slice(0, previewLength - 3).trimEnd() + "..."
+    : cleaned;
+  return title.length > KIE_TITLE_MAX_CHARS
+    ? title.slice(0, KIE_TITLE_MAX_CHARS).trimEnd()
+    : title;
 }
 
 function normalizeForScoring(line: string): string {

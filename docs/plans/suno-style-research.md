@@ -16,7 +16,7 @@ Date: 2026-04-25
 - Non-custom/simple mode is wrong for this product because the prompt is treated as a music idea and lyrics may be generated or rewritten automatically.
 - The user-facing `vibe` should be only a compact product choice. The backend should map that choice to a fuller `style` string.
 - The style string can include genre, mood, instruments, tempo/energy, vocal direction, and production language.
-- Kie style limits depend on model: V4 allows 200 characters; V4_5, V4_5PLUS, V4_5ALL, V5, and V5_5 allow 1000 characters. Keep our default style prompts concise anyway.
+- Kie custom-mode lyrics `prompt` is capped at 5000 characters; do not silently truncate because the product promise is exact words. Kie style limits depend on model: V4 allows 200 characters; V4_5, V4_5PLUS, V4_5ALL, V5, and V5_5 allow 1000 characters. Keep our default style prompts concise anyway.
 - Suno V4.5+ can accept more conversational style instructions, but concise comma-separated style tags remain safer for predictable bulk generation.
 - Use `negativeTags` for obvious drift control, such as excluding rap/trap/EDM from acoustic and country options.
 - Kie exposes `styleWeight`, `weirdnessConstraint`, `audioWeight`, `vocalGender`, and persona fields. Treat `styleWeight` like Suno Style Influence: stronger adherence to the style input. Keep weirdness moderate for consumer funnel consistency.

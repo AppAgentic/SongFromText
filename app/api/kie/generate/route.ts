@@ -11,6 +11,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { createGenerationJob, pollJob } from "@/lib/kie";
 import { structureLyrics } from "@/lib/lyrics";
+import { CUSTOM_SOUND_MAX_CHARS, KIE_TITLE_MAX_CHARS } from "@/lib/song-limits";
 import { PastedInputSchema } from "@/lib/validation";
 import { getSongVibe, VIBE_VALUES } from "@/lib/vibes";
 
@@ -18,8 +19,8 @@ export const runtime = "nodejs";
 
 const GenerateRequestSchema = PastedInputSchema.extend({
   vibe: z.enum(VIBE_VALUES).default("uk-rnb"),
-  customSound: z.string().trim().max(160).optional(),
-  title: z.string().trim().max(80).optional(),
+  customSound: z.string().trim().max(CUSTOM_SOUND_MAX_CHARS).optional(),
+  title: z.string().trim().max(KIE_TITLE_MAX_CHARS).optional(),
   callbackUrl: z.url().optional(),
 });
 

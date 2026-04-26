@@ -13,6 +13,7 @@ import {
   getMetaRequestContext,
   trackCapiInitiateCheckout,
 } from "@/lib/meta/capi";
+import { CUSTOM_SOUND_MAX_CHARS } from "@/lib/song-limits";
 import { PastedInputSchema } from "@/lib/validation";
 import { VIBE_VALUES } from "@/lib/vibes";
 import { createCheckout } from "@/lib/whop";
@@ -22,7 +23,7 @@ export const runtime = "nodejs";
 const CheckoutRequestSchema = PastedInputSchema.extend({
   vibe: z.enum(VIBE_VALUES),
   email: z.string().trim().toLowerCase().email().max(254),
-  customSound: z.string().trim().max(160).optional(),
+  customSound: z.string().trim().max(CUSTOM_SOUND_MAX_CHARS).optional(),
   attribution: z
     .object({
       fbp: z.string().optional(),

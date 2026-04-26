@@ -16,15 +16,19 @@ import {
 import { signInAnonymously } from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { getFirebaseAuth } from "@/lib/firebase/client";
+import { structureLyrics } from "@/lib/lyrics";
 import { getMetaAttribution, trackMetaPixelEvent } from "@/lib/meta/client";
 import { initPostHogClient, posthog } from "@/lib/posthog-client";
+import {
+  CUSTOM_SOUND_MAX_CHARS,
+  KIE_LYRICS_PROMPT_MAX_CHARS,
+  MAX_MESSAGE_LINES,
+  MIN_MESSAGE_CHARS,
+  MIN_MESSAGE_LINES,
+} from "@/lib/song-limits";
 import { cn } from "@/lib/utils";
 import { getSongVibe, type VibeId } from "@/lib/vibes";
 
-const MIN_MESSAGES = 5;
-const MIN_CHARS = 40;
-const MAX_CHARS = 2000;
-const CUSTOM_SOUND_MAX_CHARS = 160;
 const PREVIEW_PROCESSING_MS = 3400;
 const WEEKLY_PRICE_LABEL = `£${process.env.NEXT_PUBLIC_SONG_WEEKLY_PRICE_GBP ?? "6.99"}/week`;
 
@@ -157,10 +161,12 @@ interface LocalGenerationState {
 
 interface MessageStats {
   chars: number;
+  lyricPromptChars: number;
   count: number;
   firstLine: string;
   hasMessages: boolean;
   hasEnoughMessages: boolean;
+  hasTooManyMessages: boolean;
   tooLong: boolean;
   ready: boolean;
   text: string;
@@ -187,15 +193,21 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
     const cleanMessages = messages.map((message) => message.trim()).filter(Boolean);
     const text = cleanMessages.join("\n");
     const chars = text.length;
+    const lyricPromptChars = text ? structureLyrics({ text }).formatted.length : 0;
+    const hasEnoughMessages = cleanMessages.length >= MIN_MESSAGE_LINES;
+    const hasTooManyMessages = cleanMessages.length > MAX_MESSAGE_LINES;
+    const tooLong = lyricPromptChars > KIE_LYRICS_PROMPT_MAX_CHARS;
 
     return {
       chars,
+      lyricPromptChars,
       count: cleanMessages.length,
       firstLine: cleanMessages[0] ?? "",
       hasMessages: cleanMessages.length > 0,
-      hasEnoughMessages: cleanMessages.length >= MIN_MESSAGES,
-      tooLong: chars > MAX_CHARS,
-      ready: cleanMessages.length >= MIN_MESSAGES && chars >= MIN_CHARS && chars <= MAX_CHARS,
+      hasEnoughMessages,
+      hasTooManyMessages,
+      tooLong,
+      ready: hasEnoughMessages && !hasTooManyMessages && chars >= MIN_MESSAGE_CHARS && !tooLong,
       text,
     };
   }, [messages]);
@@ -226,17 +238,29 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
       .filter(Boolean);
     if (!incoming.length) return;
 
-    setMessages((current) => {
-      const next = [...current, ...incoming].slice(0, 18);
-      trackFunnelEvent("messages_added", {
-        added_count: incoming.length,
-        total_count: next.length,
-        char_count: next.join("\n").length,
-      });
-      return next;
+    const availableSlots = Math.max(0, MAX_MESSAGE_LINES - messages.length);
+    if (availableSlots === 0) {
+      setError(`Use up to ${MAX_MESSAGE_LINES} messages. Remove one before adding another.`);
+      return;
+    }
+
+    const accepted = incoming.slice(0, availableSlots);
+    const next = [...messages, ...accepted];
+    const droppedCount = incoming.length - accepted.length;
+
+    setMessages(next);
+    trackFunnelEvent("messages_added", {
+      added_count: accepted.length,
+      dropped_count: Math.max(0, droppedCount),
+      total_count: next.length,
+      char_count: next.join("\n").length,
     });
     setDraft("");
-    setError(null);
+    setError(
+      droppedCount > 0
+        ? `Added the first ${accepted.length} line${accepted.length === 1 ? "" : "s"}. Keep it to ${MAX_MESSAGE_LINES} messages or trim longer messages to fit the lyrics budget.`
+        : null,
+    );
     resetLocalGeneration();
   }
 
@@ -923,8 +947,8 @@ function MessagesScreen({
           <div className="rounded-[20px] border border-[#e2d8d0] bg-[#fffdfb] p-3 shadow-[0_14px_34px_rgba(42,32,24,0.06)]">
             <div className="flex items-center justify-between gap-3">
               <p className="text-[15px] font-medium text-[#2a2228]">Or paste multiple messages</p>
-              <span className={cn("text-xs tabular-nums", stats.tooLong ? "text-red-600" : "text-[#86797f]")}>
-                {stats.count}/{MIN_MESSAGES}
+              <span className={cn("text-xs tabular-nums", stats.tooLong || stats.hasTooManyMessages ? "text-red-600" : "text-[#86797f]")}>
+                {stats.count}/{MAX_MESSAGE_LINES}
               </span>
             </div>
             <textarea
@@ -936,11 +960,11 @@ function MessagesScreen({
             <button
               type="button"
               onClick={onAdd}
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || stats.count >= MAX_MESSAGE_LINES}
               className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-[14px] border border-dashed border-[#c49ed8] bg-white text-[15px] font-semibold text-[#5e2584] transition hover:bg-[#faf4ff] active:scale-[0.99] disabled:border-[#e3d9d1] disabled:text-[#b5a9ae]"
             >
               <Plus className="size-4" aria-hidden />
-              Add another message
+              {stats.count >= MAX_MESSAGE_LINES ? "Message limit reached" : "Add another message"}
             </button>
           </div>
         </div>
@@ -1472,7 +1496,7 @@ function DesktopCreator({
             <div className="mt-5 grid gap-3 text-sm">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-white/52">Messages</span>
-                <span className="font-semibold text-white">{stats.count}/{MIN_MESSAGES}</span>
+                <span className="font-semibold text-white">{stats.count}/{MAX_MESSAGE_LINES}</span>
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-white/52">Sound</span>
@@ -1682,8 +1706,8 @@ function DesktopMessagesStep({
             <label htmlFor="desktop-message-draft" className="text-[15px] font-semibold text-[#2a2228]">
               Add more messages
             </label>
-            <span className={cn("text-sm tabular-nums", stats.tooLong ? "text-red-600" : "text-[#86797f]")}>
-              {stats.count}/{MIN_MESSAGES}
+            <span className={cn("text-sm tabular-nums", stats.tooLong || stats.hasTooManyMessages ? "text-red-600" : "text-[#86797f]")}>
+              {stats.count}/{MAX_MESSAGE_LINES}
             </span>
           </div>
           <textarea
@@ -1706,11 +1730,11 @@ function DesktopMessagesStep({
             <button
               type="button"
               onClick={onAdd}
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || stats.count >= MAX_MESSAGE_LINES}
               className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#241b25] px-5 text-sm font-semibold text-white transition hover:bg-[#342838] active:scale-[0.99] disabled:bg-[#ded6cf] disabled:text-[#8f858a]"
             >
               <Plus className="size-4" aria-hidden />
-              Add message
+              {stats.count >= MAX_MESSAGE_LINES ? "Limit reached" : "Add message"}
             </button>
           </div>
         </div>
@@ -1719,8 +1743,8 @@ function DesktopMessagesStep({
       <div className="flex flex-col rounded-[26px] border border-[#eadfd7] bg-white/70 p-5 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
         <p className="font-serif text-3xl leading-tight text-[#251d23]">Your lyric stack</p>
         <div className="mt-5 space-y-3">
-          <SummaryLine label="Messages" value={`${stats.count}/${MIN_MESSAGES}`} />
-          <SummaryLine label="Characters" value={`${stats.chars}/${MAX_CHARS}`} />
+          <SummaryLine label="Messages" value={`${stats.count}/${MAX_MESSAGE_LINES}`} />
+          <SummaryLine label="Lyric budget" value={`${stats.lyricPromptChars}/${KIE_LYRICS_PROMPT_MAX_CHARS}`} />
           <SummaryLine label="Status" value={stats.ready ? "Ready" : "Needs more"} />
         </div>
         <p className={cn("mt-5 text-sm leading-6", error ? "text-red-600" : "text-[#675b61]")}>
@@ -2114,26 +2138,29 @@ function ProofRow({ label }: { label: string }) {
 }
 
 function messageHelperText(stats: MessageStats): string {
-  if (!stats.hasMessages) return "Add at least five real messages to build a stronger song.";
-  if (!stats.hasEnoughMessages) return `${MIN_MESSAGES - stats.count} more message${MIN_MESSAGES - stats.count === 1 ? "" : "s"} before the preview.`;
-  if (stats.tooLong) return "Trim the transcript before continuing.";
-  if (stats.chars < MIN_CHARS) return "Add a little more wording so the hook has weight.";
-  return "Good. You have enough exact words for a first song.";
+  if (!stats.hasMessages) return `Add ${MIN_MESSAGE_LINES}-${MAX_MESSAGE_LINES} real messages to build a stronger song.`;
+  if (!stats.hasEnoughMessages) return `${MIN_MESSAGE_LINES - stats.count} more message${MIN_MESSAGE_LINES - stats.count === 1 ? "" : "s"} before the preview.`;
+  if (stats.hasTooManyMessages) return `Use ${MAX_MESSAGE_LINES} or fewer messages so every line can stay in the song.`;
+  if (stats.tooLong) return `Trim a few lines. The prepared lyrics must fit Suno's ${KIE_LYRICS_PROMPT_MAX_CHARS.toLocaleString()} character budget.`;
+  if (stats.chars < MIN_MESSAGE_CHARS) return "Add a little more wording so the hook has weight.";
+  return `Good. ${Math.max(0, KIE_LYRICS_PROMPT_MAX_CHARS - stats.lyricPromptChars).toLocaleString()} lyric-budget characters left.`;
 }
 
 function messageGateText(stats: MessageStats): string {
   if (!stats.hasMessages) return "Add the messages first.";
-  if (!stats.hasEnoughMessages) return `${MIN_MESSAGES - stats.count} more message${MIN_MESSAGES - stats.count === 1 ? "" : "s"} needed before sound selection.`;
-  if (stats.tooLong) return "Trim the messages before continuing.";
-  if (stats.chars < MIN_CHARS) return "Add a little more text before continuing.";
+  if (!stats.hasEnoughMessages) return `${MIN_MESSAGE_LINES - stats.count} more message${MIN_MESSAGE_LINES - stats.count === 1 ? "" : "s"} needed before sound selection.`;
+  if (stats.hasTooManyMessages) return `Use ${MAX_MESSAGE_LINES} or fewer messages before continuing.`;
+  if (stats.tooLong) return `Trim the messages to fit Suno's ${KIE_LYRICS_PROMPT_MAX_CHARS.toLocaleString()} character lyrics limit.`;
+  if (stats.chars < MIN_MESSAGE_CHARS) return "Add a little more text before continuing.";
   return "Ready to continue.";
 }
 
 function messageFailureReason(stats: MessageStats): string {
   if (!stats.hasMessages) return "no_messages";
   if (!stats.hasEnoughMessages) return "not_enough_messages";
+  if (stats.hasTooManyMessages) return "too_many_messages";
   if (stats.tooLong) return "too_long";
-  if (stats.chars < MIN_CHARS) return "not_enough_text";
+  if (stats.chars < MIN_MESSAGE_CHARS) return "not_enough_text";
   return "unknown";
 }
 
