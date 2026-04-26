@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -17,6 +17,7 @@ import { signInAnonymously } from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { getMetaAttribution, trackMetaPixelEvent } from "@/lib/meta/client";
+import { initPostHogClient, posthog } from "@/lib/posthog-client";
 import { cn } from "@/lib/utils";
 import { getSongVibe, type VibeId } from "@/lib/vibes";
 
@@ -24,6 +25,8 @@ const MIN_MESSAGES = 5;
 const MIN_CHARS = 40;
 const MAX_CHARS = 2000;
 const CUSTOM_SOUND_MAX_CHARS = 160;
+const PREVIEW_PROCESSING_MS = 3400;
+const WEEKLY_PRICE_LABEL = `£${process.env.NEXT_PUBLIC_SONG_WEEKLY_PRICE_GBP ?? "6.99"}/week`;
 
 const SAMPLE_MESSAGES = [
   "I never meant to hurt you.",
@@ -37,6 +40,28 @@ const FLOW_STEPS = ["Hook", "Messages", "Sound", "Preview"] as const;
 
 const HERO_IMAGE = "https://picsum.photos/seed/songfromtext-sunset/900/1500";
 const PREVIEW_IMAGE = "https://picsum.photos/seed/songfromtext-rain-window/900/760";
+
+const PROCESSING_STEPS = [
+  "Finding the emotional hook",
+  "Keeping every word exact",
+  "Building your locked preview",
+];
+
+const PAYWALL_BENEFITS = [
+  "Unlimited songs this week",
+  "Uses their exact words",
+  "Download the MP3",
+  "Cancel anytime",
+];
+
+const SOUND_REFINEMENT_CHIPS = [
+  "short chorus",
+  "male vocal",
+  "female vocal",
+  "piano-led",
+  "slow tempo",
+  "more dramatic",
+];
 
 const SOUND_CARDS: Array<{
   id: VibeId;
@@ -72,6 +97,7 @@ const LOCAL_PURCHASE_BYPASS = process.env.NEXT_PUBLIC_LOCAL_PURCHASE_BYPASS === 
 
 interface CheckoutResponsePayload {
   purchase_url?: string;
+  checkout_id?: string;
   meta_event_id?: string;
   price_gbp?: number;
   error?: string;
@@ -130,13 +156,17 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
   const [draft, setDraft] = useState("");
   const [vibe, setVibe] = useState<VibeId>("uk-rnb");
   const [customSound, setCustomSound] = useState("");
+  const [soundRefineOpen, setSoundRefineOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [checkoutState, setCheckoutState] = useState<CheckoutState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [isPreviewProcessing, setIsPreviewProcessing] = useState(false);
   const [localGeneration, setLocalGeneration] = useState<LocalGenerationState>({
     status: "idle",
   });
   const [step, setStep] = useState(variant === "builder" ? 1 : 0);
+  const previewTimerRef = useRef<number | null>(null);
+  const emailTrackedRef = useRef(false);
 
   const stats = useMemo<MessageStats>(() => {
     const cleanMessages = messages.map((message) => message.trim()).filter(Boolean);
@@ -161,6 +191,18 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
   const emailReady = isValidEmail(email);
   const isBusy = checkoutState !== "idle";
   const canUnlock = stats.ready && emailReady;
+  const firstStep = variant === "builder" ? 1 : 0;
+  const canGoBack = step > firstStep || isPreviewProcessing;
+
+  useEffect(() => {
+    trackFunnelEvent("create_viewed", {
+      variant,
+      entry_step: firstStep === 1 ? "messages" : "hook",
+    });
+
+    return () => clearPreviewTimer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function addDraft() {
     const incoming = draft
@@ -169,7 +211,15 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
       .filter(Boolean);
     if (!incoming.length) return;
 
-    setMessages((current) => [...current, ...incoming].slice(0, 18));
+    setMessages((current) => {
+      const next = [...current, ...incoming].slice(0, 18);
+      trackFunnelEvent("messages_added", {
+        added_count: incoming.length,
+        total_count: next.length,
+        char_count: next.join("\n").length,
+      });
+      return next;
+    });
     setDraft("");
     setError(null);
     resetLocalGeneration();
@@ -177,6 +227,7 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
 
   function removeMessage(index: number) {
     setMessages((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    trackFunnelEvent("message_removed", { index });
     setError(null);
     resetLocalGeneration();
   }
@@ -185,6 +236,10 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
     setMessages(SAMPLE_MESSAGES);
     setDraft("");
     setError(null);
+    trackFunnelEvent("sample_messages_used", {
+      total_count: SAMPLE_MESSAGES.length,
+      char_count: SAMPLE_MESSAGES.join("\n").length,
+    });
     resetLocalGeneration();
   }
 
@@ -194,12 +249,38 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
 
   function goNext() {
     if (step === 0) {
+      trackFunnelEvent("hook_start_clicked");
       setStep(1);
       return;
     }
 
     if (step === 1 && !stats.ready) {
+      trackFunnelEvent("validation_failed", {
+        step: "messages",
+        reason: messageFailureReason(stats),
+        message_count: stats.count,
+        char_count: stats.chars,
+      });
       setError(messageGateText(stats));
+      return;
+    }
+
+    if (step === 1) {
+      trackFunnelEvent("messages_ready", {
+        message_count: stats.count,
+        char_count: stats.chars,
+      });
+      setError(null);
+      setStep(2);
+      return;
+    }
+
+    if (step === 2) {
+      trackFunnelEvent("sound_selected", {
+        vibe,
+        custom_sound: Boolean(trimmedCustomSound),
+      });
+      startPreviewProcessing();
       return;
     }
 
@@ -208,13 +289,101 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
   }
 
   function goBack() {
+    clearPreviewTimer();
+    setIsPreviewProcessing(false);
     setError(null);
-    setStep((current) => Math.max(variant === "builder" ? 1 : 0, current - 1));
+    setStep((current) => Math.max(firstStep, current - 1));
+  }
+
+  function clearPreviewTimer() {
+    if (previewTimerRef.current !== null) {
+      window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+  }
+
+  function startPreviewProcessing() {
+    clearPreviewTimer();
+    setError(null);
+    setStep(3);
+    setIsPreviewProcessing(true);
+    trackFunnelEvent("preview_processing_started", {
+      message_count: stats.count,
+      char_count: stats.chars,
+      vibe,
+    });
+
+    previewTimerRef.current = window.setTimeout(() => {
+      setIsPreviewProcessing(false);
+      previewTimerRef.current = null;
+      trackFunnelEvent("preview_viewed", {
+        message_count: stats.count,
+        char_count: stats.chars,
+        vibe,
+      });
+    }, PREVIEW_PROCESSING_MS);
+  }
+
+  function handleVibeChange(nextVibe: VibeId) {
+    setVibe(nextVibe);
+    trackFunnelEvent("sound_option_selected", { vibe: nextVibe });
+    resetLocalGeneration();
+  }
+
+  function handleCustomSoundChange(nextSound: string) {
+    const value = nextSound.slice(0, CUSTOM_SOUND_MAX_CHARS);
+    if (value.trim() && !customSound.trim()) {
+      trackFunnelEvent("custom_sound_started", { vibe });
+    }
+    setCustomSound(value);
+    resetLocalGeneration();
+  }
+
+  function openSoundRefine() {
+    if (!soundRefineOpen) {
+      trackFunnelEvent("custom_sound_opened", { vibe });
+    }
+    setSoundRefineOpen(true);
+  }
+
+  function appendSoundNote(note: string) {
+    openSoundRefine();
+    const parts = customSound
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (parts.some((part) => part.toLowerCase() === note.toLowerCase())) return;
+    handleCustomSoundChange([...parts, note].join(", "));
+  }
+
+  function handleEmailChange(nextEmail: string) {
+    setEmail(nextEmail);
+    if (!emailTrackedRef.current && isValidEmail(nextEmail)) {
+      emailTrackedRef.current = true;
+      trackFunnelEvent("email_submitted", {
+        message_count: stats.count,
+        char_count: stats.chars,
+      });
+    }
   }
 
   async function handleCheckout() {
+    trackFunnelEvent("unlock_clicked", {
+      ready: stats.ready,
+      email_ready: emailReady,
+      local_bypass: LOCAL_PURCHASE_BYPASS,
+      message_count: stats.count,
+      char_count: stats.chars,
+    });
+
     if (!stats.ready) {
       setStep(1);
+      trackFunnelEvent("validation_failed", {
+        step: "unlock",
+        reason: messageFailureReason(stats),
+        message_count: stats.count,
+        char_count: stats.chars,
+      });
       setError(messageGateText(stats));
       return;
     }
@@ -263,6 +432,10 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
         throw new Error(firstIssue ?? payload.error ?? "Checkout could not be created.");
       }
 
+      trackFunnelEvent("checkout_created", {
+        checkout_id: payload.checkout_id,
+        price_gbp: payload.price_gbp ?? 6.99,
+      });
       setCheckoutState("redirecting");
       trackMetaPixelEvent(
         "InitiateCheckout",
@@ -276,10 +449,17 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
         },
         payload.meta_event_id,
       );
+      trackFunnelEvent("checkout_redirected", {
+        checkout_id: payload.checkout_id,
+        meta_event_id: payload.meta_event_id,
+      });
       await new Promise((resolve) => window.setTimeout(resolve, 250));
       window.location.assign(payload.purchase_url);
     } catch (checkoutError) {
       setCheckoutState("idle");
+      trackFunnelEvent("checkout_error", {
+        message: checkoutError instanceof Error ? checkoutError.message : "Checkout could not be created.",
+      });
       setError(
         checkoutError instanceof Error
           ? checkoutError.message
@@ -292,6 +472,11 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
     setError(null);
     setCheckoutState("creating");
     setLocalGeneration({ status: "queued" });
+    trackFunnelEvent("generation_started", {
+      local_bypass: true,
+      vibe,
+      message_count: stats.count,
+    });
 
     try {
       const created = await postLocalGeneration();
@@ -320,6 +505,11 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
         coverUrl: finalJob.coverUrl,
         duration: firstTrack?.duration,
       });
+      trackFunnelEvent("generation_succeeded", {
+        local_bypass: true,
+        task_id: finalJob.id,
+        duration: firstTrack?.duration,
+      });
     } catch (generationError) {
       const message = generationError instanceof Error
         ? generationError.message
@@ -329,6 +519,10 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
         status: "failed",
         error: message,
       }));
+      trackFunnelEvent("generation_failed", {
+        local_bypass: true,
+        message,
+      });
       setError(message);
     } finally {
       setCheckoutState("idle");
@@ -390,7 +584,12 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
           {step === 0 ? (
             <HookScreen onStart={() => setStep(1)} />
           ) : (
-            <QuizScreenFrame step={step} onBack={goBack}>
+            <QuizScreenFrame
+              step={step}
+              canGoBack={canGoBack}
+              isProcessing={isPreviewProcessing}
+              onBack={goBack}
+            >
               {step === 1 ? (
                 <MessagesScreen
                   messages={messages}
@@ -409,19 +608,20 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
                 <SoundScreen
                   vibe={vibe}
                   customSound={customSound}
-                  onVibeChange={(nextVibe) => {
-                    setVibe(nextVibe);
-                    resetLocalGeneration();
-                  }}
-                  onCustomSoundChange={(nextSound) => {
-                    setCustomSound(nextSound.slice(0, CUSTOM_SOUND_MAX_CHARS));
-                    resetLocalGeneration();
-                  }}
+                  refineOpen={soundRefineOpen}
+                  onVibeChange={handleVibeChange}
+                  onCustomSoundChange={handleCustomSoundChange}
+                  onOpenRefine={openSoundRefine}
+                  onAppendSoundNote={appendSoundNote}
                   onNext={goNext}
                 />
               ) : null}
 
-              {step === 3 ? (
+              {step === 3 && isPreviewProcessing ? (
+                <ProcessingScreen stats={stats} soundLabel={soundLabel} />
+              ) : null}
+
+              {step === 3 && !isPreviewProcessing ? (
                 <ResultScreen
                   stats={stats}
                   soundLabel={soundLabel}
@@ -433,7 +633,7 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
                   canUnlock={canUnlock}
                   localBypass={LOCAL_PURCHASE_BYPASS}
                   localGeneration={localGeneration}
-                  onEmailChange={setEmail}
+                  onEmailChange={handleEmailChange}
                   onCheckout={handleCheckout}
                 />
               ) : null}
@@ -453,11 +653,14 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
         email={email}
         emailReady={emailReady}
         error={error}
+        canGoBack={canGoBack}
+        isPreviewProcessing={isPreviewProcessing}
         checkoutState={checkoutState}
         isBusy={isBusy}
         canUnlock={canUnlock}
         localBypass={LOCAL_PURCHASE_BYPASS}
         localGeneration={localGeneration}
+        soundRefineOpen={soundRefineOpen}
         onStart={() => setStep(1)}
         onBack={goBack}
         onNext={goNext}
@@ -465,15 +668,11 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
         onAdd={addDraft}
         onSample={useSample}
         onRemove={removeMessage}
-        onVibeChange={(nextVibe) => {
-          setVibe(nextVibe);
-          resetLocalGeneration();
-        }}
-        onCustomSoundChange={(nextSound) => {
-          setCustomSound(nextSound.slice(0, CUSTOM_SOUND_MAX_CHARS));
-          resetLocalGeneration();
-        }}
-        onEmailChange={setEmail}
+        onVibeChange={handleVibeChange}
+        onCustomSoundChange={handleCustomSoundChange}
+        onOpenRefine={openSoundRefine}
+        onAppendSoundNote={appendSoundNote}
+        onEmailChange={handleEmailChange}
         onCheckout={handleCheckout}
       />
     </main>
@@ -482,6 +681,20 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function trackFunnelEvent(eventName: string, properties: Record<string, unknown> = {}): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    initPostHogClient();
+    posthog.capture(eventName, {
+      product: "songfromtext",
+      ...properties,
+    });
+  } catch {
+    // Analytics should never block the creator flow.
+  }
 }
 
 function isValidEmail(value: string): boolean {
@@ -565,7 +778,7 @@ function HookScreen({ onStart }: { onStart: () => void }) {
         onClick={onStart}
         className="group flex h-16 w-full items-center justify-center gap-3 rounded-full bg-[#ff9b8f] text-[17px] font-semibold text-[#201113] shadow-[0_24px_50px_rgba(22,12,11,0.36)] transition hover:bg-[#ffa99e] active:scale-[0.985]"
       >
-        Let&apos;s do it
+        Make my song
         <ArrowRight className="size-5 transition group-hover:translate-x-0.5" aria-hidden />
       </button>
 
@@ -583,26 +796,36 @@ function HookScreen({ onStart }: { onStart: () => void }) {
 
 function QuizScreenFrame({
   step,
+  canGoBack,
+  isProcessing,
   onBack,
   children,
 }: {
   step: number;
+  canGoBack: boolean;
+  isProcessing: boolean;
   onBack: () => void;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-[#fffaf5] px-5 pb-5 pt-5">
       <div className="flex h-11 items-center justify-between">
-        <button
-          type="button"
-          onClick={onBack}
-          className="grid size-10 place-items-center rounded-full text-[#231c21] transition hover:bg-[#f2e8df] active:scale-[0.96]"
-          aria-label="Go back"
-        >
-          <ArrowLeft className="size-5" aria-hidden />
-        </button>
+        {canGoBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="grid size-10 place-items-center rounded-full text-[#231c21] transition hover:bg-[#f2e8df] active:scale-[0.96]"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="size-5" aria-hidden />
+          </button>
+        ) : (
+          <div className="size-10" aria-hidden />
+        )}
         <div className="min-w-[150px] text-center">
-          <p className="text-[13px] text-[#43363f]">Step {step} of 3</p>
+          <p className="text-[13px] text-[#43363f]">
+            {isProcessing ? "Building preview" : `Step ${step} of 3`}
+          </p>
           <ProgressBars step={step} />
         </div>
         <div className="grid size-10 place-items-center rounded-full text-[#ff766e]">
@@ -676,9 +899,9 @@ function MessagesScreen({
             <button
               type="button"
               onClick={onSample}
-              className="mb-3 h-11 w-full rounded-[14px] border border-dashed border-[#c49ed8] bg-[#fdf7ff] text-[15px] font-semibold text-[#5e2584] transition hover:bg-[#f8edff] active:scale-[0.99]"
+              className="mb-3 h-10 w-full rounded-[14px] border border-dashed border-[#d8c9d1] bg-transparent text-[14px] font-semibold text-[#74686f] transition hover:border-[#c49ed8] hover:bg-[#fff7ff] hover:text-[#5e2584] active:scale-[0.99]"
             >
-              Use sample messages
+              See example
             </button>
           ) : null}
 
@@ -722,7 +945,7 @@ function MessagesScreen({
         disabled={!stats.ready}
         className="shrink-0 flex h-14 w-full items-center justify-center gap-3 rounded-full bg-[#17171d] text-[16px] font-semibold text-white shadow-[0_18px_40px_rgba(23,23,29,0.18)] transition hover:bg-[#23232a] active:scale-[0.99] disabled:bg-[#ded6cf] disabled:text-[#8f858a] disabled:shadow-none"
       >
-        Continue
+        Choose sound
         <ArrowRight className="size-5" aria-hidden />
       </button>
     </div>
@@ -773,16 +996,24 @@ function MessageBubble({
 function SoundScreen({
   vibe,
   customSound,
+  refineOpen,
   onVibeChange,
   onCustomSoundChange,
+  onOpenRefine,
+  onAppendSoundNote,
   onNext,
 }: {
   vibe: VibeId;
   customSound: string;
+  refineOpen: boolean;
   onVibeChange: (vibe: VibeId) => void;
   onCustomSoundChange: (sound: string) => void;
+  onOpenRefine: () => void;
+  onAppendSoundNote: (note: string) => void;
   onNext: () => void;
 }) {
+  const showRefine = refineOpen || Boolean(customSound.trim());
+
   return (
     <div className="flex min-h-0 flex-1 flex-col pb-1 pt-6">
       <div className="shrink-0 px-1">
@@ -827,18 +1058,52 @@ function SoundScreen({
         </div>
 
         <div className="mt-5 rounded-[20px] border border-[#e2d8d0] bg-[#fffdfb] p-4 shadow-[0_14px_34px_rgba(42,32,24,0.06)]">
-          <label htmlFor="custom-sound" className="text-[15px] font-medium text-[#2a2228]">
-            Add your own style notes
-          </label>
-          <textarea
-            id="custom-sound"
-            value={customSound}
-            onChange={(event) => onCustomSoundChange(event.target.value)}
-            maxLength={CUSTOM_SOUND_MAX_CHARS}
-            placeholder="e.g. slow tempo, female vocals, piano and drums, 2000s vibe..."
-            className="mt-3 min-h-20 w-full resize-none rounded-[14px] border border-[#ded3cb] bg-[#f6f1ed] px-4 py-3 text-[16px] leading-6 text-[#251d23] outline-none placeholder:text-[#a99ea4] focus:border-[#be8ed5] focus:ring-[3px] focus:ring-[#d9b3ea]/30"
-          />
-          <p className="mt-1 text-right text-xs tabular-nums text-[#9b8f95]">{customSound.length}/{CUSTOM_SOUND_MAX_CHARS}</p>
+          <button
+            type="button"
+            onClick={onOpenRefine}
+            className="flex w-full items-center justify-between gap-3 text-left"
+          >
+            <span>
+              <span className="block text-[15px] font-semibold text-[#2a2228]">Refine sound</span>
+              <span className="mt-1 block text-[13px] leading-5 text-[#74686f]">
+                Optional. UK R&B is ready by default.
+              </span>
+            </span>
+            <span className="grid size-9 place-items-center rounded-full bg-[#f4dfe7] text-[#a43363]">
+              <Plus className="size-4" aria-hidden />
+            </span>
+          </button>
+
+          {showRefine ? (
+            <div className="mt-4">
+              <div className="flex flex-wrap gap-2">
+                {SOUND_REFINEMENT_CHIPS.map((note) => (
+                  <button
+                    key={note}
+                    type="button"
+                    onClick={() => onAppendSoundNote(note)}
+                    className="rounded-full border border-[#e4d5cc] bg-white px-3 py-1.5 text-xs font-semibold text-[#4b3f46] transition hover:border-[#cda6dc] hover:bg-[#fbf4ff] active:scale-[0.98]"
+                  >
+                    {note}
+                  </button>
+                ))}
+              </div>
+              <label htmlFor="custom-sound" className="sr-only">
+                Add your own style notes
+              </label>
+              <textarea
+                id="custom-sound"
+                value={customSound}
+                onChange={(event) => onCustomSoundChange(event.target.value)}
+                maxLength={CUSTOM_SOUND_MAX_CHARS}
+                placeholder="e.g. softer vocal, piano-led, short chorus..."
+                className="mt-3 min-h-20 w-full resize-none rounded-[14px] border border-[#ded3cb] bg-[#f6f1ed] px-4 py-3 text-[16px] leading-6 text-[#251d23] outline-none placeholder:text-[#a99ea4] focus:border-[#be8ed5] focus:ring-[3px] focus:ring-[#d9b3ea]/30"
+              />
+              <p className="mt-1 text-right text-xs tabular-nums text-[#9b8f95]">
+                {customSound.length}/{CUSTOM_SOUND_MAX_CHARS}
+              </p>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -847,9 +1112,63 @@ function SoundScreen({
         onClick={onNext}
         className="shrink-0 flex h-14 w-full items-center justify-center gap-3 rounded-full bg-[#6f36a4] text-[16px] font-semibold text-white shadow-[0_18px_40px_rgba(99,50,141,0.22)] transition hover:bg-[#7d42b2] active:scale-[0.99]"
       >
-        Continue
+        Hear preview
         <ArrowRight className="size-5" aria-hidden />
       </button>
+    </div>
+  );
+}
+
+function ProcessingScreen({
+  stats,
+  soundLabel,
+}: {
+  stats: MessageStats;
+  soundLabel: string;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col pb-1 pt-8">
+      <div className="shrink-0 px-1 text-center">
+        <h2 className="font-serif text-[2rem] leading-tight text-[#231c21]">Building your preview</h2>
+        <p className="mt-2 text-[15px] leading-6 text-[#685e64]">
+          Keeping their words exactly as written.
+        </p>
+      </div>
+
+      <div className="mt-7 flex min-h-0 flex-1 flex-col justify-center rounded-[24px] border border-[#eadfd7] bg-white/72 p-5 shadow-[0_18px_54px_rgba(42,32,24,0.08)]">
+        <div className="rounded-[22px] bg-[#261c25] p-5 text-white">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/58">Preview recipe</p>
+          <p className="mt-4 font-serif text-3xl italic leading-tight">
+            {previewTitle(stats.firstLine) || "Their message song"}
+          </p>
+          <div className="mt-6">
+            <WaveformBars active seed={stats.chars} />
+          </div>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          {PROCESSING_STEPS.map((item, index) => (
+            <div
+              key={item}
+              className="flex items-center gap-3 rounded-[16px] border border-[#eadfd7] bg-[#fffaf5] px-4 py-3 text-sm font-semibold text-[#3c3138]"
+            >
+              <span
+                className="grid size-7 place-items-center rounded-full bg-[#f4dfe7] text-[#a43363] [animation:sft-pulse_1.4s_ease-in-out_infinite]"
+                style={{ animationDelay: `${index * 180}ms` }}
+              >
+                <Check className="size-4" aria-hidden />
+              </span>
+              {item}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 grid grid-cols-3 gap-2 text-center text-[11px] leading-4 text-[#796e75]">
+          <span>{stats.count} messages</span>
+          <span className="truncate">{soundLabel}</span>
+          <span>Exact words</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -887,8 +1206,8 @@ function ResultScreen({
   return (
     <div className="flex min-h-0 flex-1 flex-col pb-1 pt-6">
       <div className="shrink-0 px-1 text-center">
-        <h2 className="font-serif text-[2rem] leading-tight text-[#231c21]">Here&apos;s your song</h2>
-        <p className="mt-1 text-[15px] leading-6 text-[#685e64]">Preview</p>
+        <h2 className="font-serif text-[2rem] leading-tight text-[#231c21]">Your song is ready</h2>
+        <p className="mt-1 text-[15px] leading-6 text-[#685e64]">Locked preview</p>
       </div>
 
       <div className="mt-5 min-h-0 flex-1 overflow-y-auto pb-4 pr-1">
@@ -900,13 +1219,20 @@ function ResultScreen({
             backgroundSize: "cover",
           }}
         >
+          <div className="absolute left-4 top-4 rounded-full bg-white/14 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md">
+            Locked preview
+          </div>
           <div className="flex min-h-[205px] flex-col justify-end">
             <p className="mx-auto max-w-[14rem] text-center font-serif text-[2rem] italic leading-[1.03] text-white">
               {previewTitle(stats.firstLine) || "Things you said"}
             </p>
             <div className="mt-8 grid grid-cols-[42px_minmax(0,1fr)_34px] items-center gap-3">
               <span className="grid size-10 place-items-center rounded-full bg-white text-[#241d22]">
-                <Play className="ml-0.5 size-5 fill-current" aria-hidden />
+                {hasLocalResult ? (
+                  <Play className="ml-0.5 size-5 fill-current" aria-hidden />
+                ) : (
+                  <LockKeyhole className="size-5" aria-hidden />
+                )}
               </span>
               <WaveformBars active={isGenerating || Boolean(hasLocalResult)} seed={stats.chars} />
               <span className="text-xs tabular-nums text-white/82">0:30</span>
@@ -915,9 +1241,9 @@ function ResultScreen({
         </div>
 
         <div className="mt-4 rounded-[20px] border border-[#ead7eb] bg-[#f2dff2] p-4 shadow-[0_14px_34px_rgba(82,56,88,0.08)]">
-          <p className="text-[16px] font-semibold text-[#5f2584]">Almost there...</p>
+          <p className="text-[16px] font-semibold text-[#5f2584]">Save it before unlock</p>
           <p className="mt-1 text-[13px] leading-5 text-[#4c4149]">
-            Enter your email to get your full song and save it to your library.
+            Enter your email so your song setup does not disappear.
           </p>
           <div className="mt-4 grid grid-cols-[42px_minmax(0,1fr)] overflow-hidden rounded-[14px] bg-white shadow-[inset_0_0_0_1px_rgba(71,55,60,0.08)] focus-within:ring-[3px] focus-within:ring-[#d9b3ea]/40">
             <div className="grid place-items-center text-[#82727c]">
@@ -936,6 +1262,23 @@ function ResultScreen({
           {email && !emailReady ? (
             <p className="mt-2 text-sm text-red-700">Enter a valid email to continue.</p>
           ) : null}
+        </div>
+
+        <div className="mt-4 rounded-[20px] border border-[#e7d8d0] bg-white p-4 shadow-[0_14px_34px_rgba(42,32,24,0.06)]">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-[#9c7b83]">
+                Unlock includes
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-[#251d23]">{WEEKLY_PRICE_LABEL}</p>
+            </div>
+            <p className="pb-1 text-xs font-semibold text-[#74686f]">Cancel anytime</p>
+          </div>
+          <div className="mt-4 grid gap-2">
+            {PAYWALL_BENEFITS.slice(0, 3).map((benefit) => (
+              <ProofRow key={benefit} label={benefit} />
+            ))}
+          </div>
         </div>
 
         {hasLocalResult ? (
@@ -971,10 +1314,10 @@ function ResultScreen({
       >
         <LockKeyhole className="size-4" aria-hidden />
         {checkoutState === "creating"
-          ? localBypass ? "Generating your song..." : "Opening unlock..."
-          : checkoutState === "redirecting"
-            ? "Opening Whop..."
-            : "Unlock weekly access"}
+            ? localBypass ? "Generating your song..." : "Opening unlock..."
+            : checkoutState === "redirecting"
+              ? "Opening Whop..."
+              : "Unlock my full song"}
         <ArrowRight className="size-4" aria-hidden />
       </Button>
     </div>
@@ -992,11 +1335,14 @@ function DesktopCreator({
   email,
   emailReady,
   error,
+  canGoBack,
+  isPreviewProcessing,
   checkoutState,
   isBusy,
   canUnlock,
   localBypass,
   localGeneration,
+  soundRefineOpen,
   onStart,
   onBack,
   onNext,
@@ -1006,6 +1352,8 @@ function DesktopCreator({
   onRemove,
   onVibeChange,
   onCustomSoundChange,
+  onOpenRefine,
+  onAppendSoundNote,
   onEmailChange,
   onCheckout,
 }: {
@@ -1019,11 +1367,14 @@ function DesktopCreator({
   email: string;
   emailReady: boolean;
   error: string | null;
+  canGoBack: boolean;
+  isPreviewProcessing: boolean;
   checkoutState: CheckoutState;
   isBusy: boolean;
   canUnlock: boolean;
   localBypass: boolean;
   localGeneration: LocalGenerationState;
+  soundRefineOpen: boolean;
   onStart: () => void;
   onBack: () => void;
   onNext: () => void;
@@ -1033,6 +1384,8 @@ function DesktopCreator({
   onRemove: (index: number) => void;
   onVibeChange: (vibe: VibeId) => void;
   onCustomSoundChange: (sound: string) => void;
+  onOpenRefine: () => void;
+  onAppendSoundNote: (note: string) => void;
   onEmailChange: (email: string) => void;
   onCheckout: () => void;
 }) {
@@ -1085,11 +1438,11 @@ function DesktopCreator({
               Create your song
             </p>
             <p className="mt-1 text-sm text-[#74686f]">
-              {step === 0 ? "Start with the story" : `Step ${step} of 3`}
+              {isPreviewProcessing ? "Building preview" : step === 0 ? "Start with the story" : `Step ${step} of 3`}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {step > 0 ? (
+            {canGoBack ? (
               <button
                 type="button"
                 onClick={onBack}
@@ -1124,12 +1477,18 @@ function DesktopCreator({
             <DesktopSoundStep
               vibe={vibe}
               customSound={customSound}
+              refineOpen={soundRefineOpen}
               onVibeChange={onVibeChange}
               onCustomSoundChange={onCustomSoundChange}
+              onOpenRefine={onOpenRefine}
+              onAppendSoundNote={onAppendSoundNote}
               onNext={onNext}
             />
           ) : null}
-          {step === 3 ? (
+          {step === 3 && isPreviewProcessing ? (
+            <DesktopProcessingStep stats={stats} soundLabel={soundLabel} />
+          ) : null}
+          {step === 3 && !isPreviewProcessing ? (
             <DesktopResultStep
               stats={stats}
               soundLabel={soundLabel}
@@ -1273,9 +1632,9 @@ function DesktopMessagesStep({
               <button
                 type="button"
                 onClick={onSample}
-                className="h-11 rounded-full border border-dashed border-[#c49ed8] bg-[#fdf7ff] px-5 text-sm font-semibold text-[#5e2584] transition hover:bg-[#f8edff] active:scale-[0.99]"
+                className="h-11 rounded-full border border-dashed border-[#d8c9d1] bg-transparent px-5 text-sm font-semibold text-[#74686f] transition hover:border-[#c49ed8] hover:bg-[#fff7ff] hover:text-[#5e2584] active:scale-[0.99]"
               >
-                Use sample
+                See example
               </button>
             ) : null}
             <button
@@ -1318,16 +1677,24 @@ function DesktopMessagesStep({
 function DesktopSoundStep({
   vibe,
   customSound,
+  refineOpen,
   onVibeChange,
   onCustomSoundChange,
+  onOpenRefine,
+  onAppendSoundNote,
   onNext,
 }: {
   vibe: VibeId;
   customSound: string;
+  refineOpen: boolean;
   onVibeChange: (vibe: VibeId) => void;
   onCustomSoundChange: (sound: string) => void;
+  onOpenRefine: () => void;
+  onAppendSoundNote: (note: string) => void;
   onNext: () => void;
 }) {
+  const showRefine = refineOpen || Boolean(customSound.trim());
+
   return (
     <div className="grid min-h-[600px] grid-cols-[minmax(0,1fr)_330px] gap-6">
       <div>
@@ -1375,28 +1742,116 @@ function DesktopSoundStep({
       <div className="flex flex-col rounded-[26px] border border-[#eadfd7] bg-white/70 p-5 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
         <p className="font-serif text-3xl leading-tight text-[#251d23]">Make it yours</p>
         <p className="mt-3 text-sm leading-6 text-[#675b61]">
-          Optional style notes can guide the vocal, tempo, or era without changing the lyrics.
+          UK R&B is selected by default. Add notes only if you want a more specific vocal or mood.
         </p>
-        <label htmlFor="desktop-custom-sound" className="mt-6 text-sm font-semibold text-[#2a2228]">
-          Custom style notes
-        </label>
-        <textarea
-          id="desktop-custom-sound"
-          value={customSound}
-          onChange={(event) => onCustomSoundChange(event.target.value)}
-          maxLength={CUSTOM_SOUND_MAX_CHARS}
-          placeholder="slow tempo, female vocals, piano and drums, 2000s vibe..."
-          className="mt-3 min-h-44 w-full resize-none rounded-[18px] border border-[#ded3cb] bg-[#f6f1ed] px-4 py-3 text-[16px] leading-6 text-[#251d23] outline-none placeholder:text-[#a99ea4] focus:border-[#be8ed5] focus:ring-[3px] focus:ring-[#d9b3ea]/30"
-        />
-        <p className="mt-2 text-right text-xs tabular-nums text-[#9b8f95]">{customSound.length}/{CUSTOM_SOUND_MAX_CHARS}</p>
+        <button
+          type="button"
+          onClick={onOpenRefine}
+          className="mt-6 flex h-11 items-center justify-center gap-2 rounded-full border border-[#d9c8d0] bg-white text-sm font-semibold text-[#3a3036] transition hover:border-[#cda6dc] hover:bg-[#fbf4ff] active:scale-[0.98]"
+        >
+          <Plus className="size-4" aria-hidden />
+          Refine sound
+        </button>
+
+        {showRefine ? (
+          <div className="mt-4">
+            <div className="flex flex-wrap gap-2">
+              {SOUND_REFINEMENT_CHIPS.map((note) => (
+                <button
+                  key={note}
+                  type="button"
+                  onClick={() => onAppendSoundNote(note)}
+                  className="rounded-full border border-[#e4d5cc] bg-white px-3 py-1.5 text-xs font-semibold text-[#4b3f46] transition hover:border-[#cda6dc] hover:bg-[#fbf4ff] active:scale-[0.98]"
+                >
+                  {note}
+                </button>
+              ))}
+            </div>
+            <label htmlFor="desktop-custom-sound" className="mt-4 block text-sm font-semibold text-[#2a2228]">
+              Custom style notes
+            </label>
+            <textarea
+              id="desktop-custom-sound"
+              value={customSound}
+              onChange={(event) => onCustomSoundChange(event.target.value)}
+              maxLength={CUSTOM_SOUND_MAX_CHARS}
+              placeholder="slow tempo, female vocal, piano-led..."
+              className="mt-3 min-h-32 w-full resize-none rounded-[18px] border border-[#ded3cb] bg-[#f6f1ed] px-4 py-3 text-[16px] leading-6 text-[#251d23] outline-none placeholder:text-[#a99ea4] focus:border-[#be8ed5] focus:ring-[3px] focus:ring-[#d9b3ea]/30"
+            />
+            <p className="mt-2 text-right text-xs tabular-nums text-[#9b8f95]">
+              {customSound.length}/{CUSTOM_SOUND_MAX_CHARS}
+            </p>
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={onNext}
           className="mt-auto flex h-12 items-center justify-center gap-2 rounded-full bg-[#6f36a4] text-[15px] font-semibold text-white shadow-[0_18px_40px_rgba(99,50,141,0.22)] transition hover:bg-[#7d42b2] active:scale-[0.99]"
         >
-          Preview song
+          Hear preview
           <ArrowRight className="size-4" aria-hidden />
         </button>
+      </div>
+    </div>
+  );
+}
+
+function DesktopProcessingStep({
+  stats,
+  soundLabel,
+}: {
+  stats: MessageStats;
+  soundLabel: string;
+}) {
+  return (
+    <div className="grid min-h-[600px] grid-cols-[minmax(0,1fr)_330px] gap-6">
+      <div
+        className="relative overflow-hidden rounded-[28px] bg-[#241d22] p-7 text-white shadow-[0_20px_48px_rgba(42,32,24,0.17)]"
+        style={{
+          backgroundImage: `linear-gradient(180deg, rgba(27, 22, 27, 0.08), rgba(27, 22, 27, 0.82)), url(${PREVIEW_IMAGE})`,
+          backgroundPosition: "center",
+          backgroundSize: "cover",
+        }}
+      >
+        <div className="flex min-h-full flex-col justify-end">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/64">Building preview</p>
+          <h2 className="mt-5 max-w-lg font-serif text-[4rem] italic leading-[0.95] text-white">
+            {previewTitle(stats.firstLine) || "Their message song"}
+          </h2>
+          <div className="mt-8">
+            <WaveformBars active seed={stats.chars} />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col justify-center rounded-[26px] border border-[#eadfd7] bg-white/78 p-6 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
+        <p className="font-serif text-4xl leading-tight text-[#251d23]">Your preview is being built</p>
+        <p className="mt-3 text-sm leading-6 text-[#675b61]">
+          A short locked preview makes the song feel real before you unlock the full version.
+        </p>
+
+        <div className="mt-7 space-y-3">
+          {PROCESSING_STEPS.map((item, index) => (
+            <div
+              key={item}
+              className="flex items-center gap-3 rounded-[16px] border border-[#eadfd7] bg-[#fffaf5] px-4 py-3 text-sm font-semibold text-[#3c3138]"
+            >
+              <span
+                className="grid size-7 place-items-center rounded-full bg-[#f4dfe7] text-[#a43363] [animation:sft-pulse_1.4s_ease-in-out_infinite]"
+                style={{ animationDelay: `${index * 180}ms` }}
+              >
+                <Check className="size-4" aria-hidden />
+              </span>
+              {item}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-7 space-y-3 border-t border-[#eadfd7] pt-5">
+          <SummaryLine label="Messages" value={`${stats.count} added`} />
+          <SummaryLine label="Sound" value={soundLabel} />
+          <SummaryLine label="Lyrics" value="Exact words" />
+        </div>
       </div>
     </div>
   );
@@ -1442,14 +1897,21 @@ function DesktopResultStep({
           backgroundSize: "cover",
         }}
       >
+        <div className="absolute left-7 top-7 rounded-full bg-white/14 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md">
+          Locked preview
+        </div>
         <div className="flex min-h-full flex-col justify-end">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/64">Your song preview</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/64">Your song is ready</p>
           <h2 className="mt-5 max-w-lg font-serif text-[4rem] italic leading-[0.95] text-white">
             {previewTitle(stats.firstLine) || "Things you said"}
           </h2>
           <div className="mt-8 grid grid-cols-[56px_minmax(0,1fr)_44px] items-center gap-4">
             <span className="grid size-14 place-items-center rounded-full bg-white text-[#241d22]">
-              <Play className="ml-0.5 size-6 fill-current" aria-hidden />
+              {hasLocalResult ? (
+                <Play className="ml-0.5 size-6 fill-current" aria-hidden />
+              ) : (
+                <LockKeyhole className="size-6" aria-hidden />
+              )}
             </span>
             <WaveformBars active={isGenerating || Boolean(hasLocalResult)} seed={stats.chars} />
             <span className="text-sm tabular-nums text-white/82">0:30</span>
@@ -1458,9 +1920,9 @@ function DesktopResultStep({
       </div>
 
       <div className="flex flex-col rounded-[26px] border border-[#eadfd7] bg-white/78 p-5 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
-        <p className="font-serif text-3xl leading-tight text-[#251d23]">Almost there</p>
+        <p className="font-serif text-3xl leading-tight text-[#251d23]">Unlock your full song</p>
         <p className="mt-3 text-sm leading-6 text-[#675b61]">
-          Add your email to save this setup and unlock the full song.
+          Save the setup with your email, then continue to Whop to unlock the full version.
         </p>
 
         <label htmlFor="desktop-email" className="mt-6 text-sm font-semibold text-[#2a2228]">
@@ -1489,6 +1951,23 @@ function DesktopResultStep({
           <SummaryLine label="Messages" value={`${stats.count} added`} />
           <SummaryLine label="Sound" value={soundLabel} />
           <SummaryLine label="Lyrics" value="Exact words" />
+        </div>
+
+        <div className="mt-5 rounded-[20px] border border-[#e7d8d0] bg-white p-4">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9c7b83]">
+                Full access
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-[#251d23]">{WEEKLY_PRICE_LABEL}</p>
+            </div>
+            <p className="pb-1 text-xs font-semibold text-[#74686f]">Cancel anytime</p>
+          </div>
+          <div className="mt-4 grid gap-2 text-sm text-[#4f454b]">
+            {PAYWALL_BENEFITS.map((benefit) => (
+              <ProofRow key={benefit} label={benefit} />
+            ))}
+          </div>
         </div>
 
         {hasLocalResult ? (
@@ -1520,7 +1999,7 @@ function DesktopResultStep({
             ? localBypass ? "Generating your song..." : "Opening unlock..."
             : checkoutState === "redirecting"
               ? "Opening Whop..."
-              : "Unlock weekly access"}
+              : "Unlock my full song"}
           <ArrowRight className="size-4" aria-hidden />
         </Button>
       </div>
@@ -1581,7 +2060,15 @@ function messageGateText(stats: MessageStats): string {
   if (!stats.hasEnoughMessages) return `${MIN_MESSAGES - stats.count} more message${MIN_MESSAGES - stats.count === 1 ? "" : "s"} needed before sound selection.`;
   if (stats.tooLong) return "Trim the messages before continuing.";
   if (stats.chars < MIN_CHARS) return "Add a little more text before continuing.";
-  return "Almost there.";
+  return "Ready to continue.";
+}
+
+function messageFailureReason(stats: MessageStats): string {
+  if (!stats.hasMessages) return "no_messages";
+  if (!stats.hasEnoughMessages) return "not_enough_messages";
+  if (stats.tooLong) return "too_long";
+  if (stats.chars < MIN_CHARS) return "not_enough_text";
+  return "unknown";
 }
 
 function customerFriendlyStatus(step: number): string {

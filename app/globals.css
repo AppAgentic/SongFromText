@@ -140,3 +140,14 @@
     opacity: 1;
   }
 }
+
+@keyframes sft-pulse {
+  0%, 100% {
+    transform: scale(0.96);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
