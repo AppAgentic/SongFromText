@@ -157,9 +157,7 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
 
   const selectedVibe = getSongVibe(vibe);
   const trimmedCustomSound = customSound.trim();
-  const soundLabel = trimmedCustomSound
-    ? `${selectedVibe.label} + ${trimmedCustomSound}`
-    : selectedVibe.label;
+  const soundLabel = buildSoundLabel(selectedVibe.label, trimmedCustomSound);
   const emailReady = isValidEmail(email);
   const isBusy = checkoutState !== "idle";
   const canUnlock = stats.ready && emailReady;
@@ -222,7 +220,7 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
     }
     if (!emailReady) {
       setStep(3);
-      setError("Enter a valid email so we can attach the result to checkout.");
+      setError("Enter a valid email so we can save your result before unlock.");
       return;
     }
 
@@ -387,9 +385,7 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
     <main className="min-h-[100dvh] overflow-hidden bg-[#f7f0ea] text-[#241b25]">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_12%_8%,rgba(247,132,118,0.18),transparent_30%),radial-gradient(circle_at_88%_10%,rgba(97,52,141,0.11),transparent_28%)]" />
 
-      <div className="relative mx-auto grid min-h-[100dvh] w-full max-w-6xl items-center gap-8 px-0 py-0 sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(380px,430px)_minmax(0,0.8fr)]">
-        <DesktopStoryRail step={step} stats={stats} soundLabel={soundLabel} />
-
+      <div className="relative mx-auto flex min-h-[100dvh] w-full justify-center xl:hidden">
         <section className="mx-auto flex h-[100dvh] min-h-0 w-full max-w-[430px] flex-col bg-[#fffaf5] shadow-[0_30px_100px_rgba(47,33,42,0.18)] sm:h-[820px] sm:overflow-hidden sm:rounded-[34px] sm:border-[10px] sm:border-[#171215]">
           {step === 0 ? (
             <HookScreen onStart={() => setStep(1)} />
@@ -444,9 +440,42 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
             </QuizScreenFrame>
           )}
         </section>
-
-        <DesktopProof step={step} />
       </div>
+
+      <DesktopCreator
+        step={step}
+        messages={messages}
+        draft={draft}
+        stats={stats}
+        vibe={vibe}
+        customSound={customSound}
+        soundLabel={soundLabel}
+        email={email}
+        emailReady={emailReady}
+        error={error}
+        checkoutState={checkoutState}
+        isBusy={isBusy}
+        canUnlock={canUnlock}
+        localBypass={LOCAL_PURCHASE_BYPASS}
+        localGeneration={localGeneration}
+        onStart={() => setStep(1)}
+        onBack={goBack}
+        onNext={goNext}
+        onDraftChange={setDraft}
+        onAdd={addDraft}
+        onSample={useSample}
+        onRemove={removeMessage}
+        onVibeChange={(nextVibe) => {
+          setVibe(nextVibe);
+          resetLocalGeneration();
+        }}
+        onCustomSoundChange={(nextSound) => {
+          setCustomSound(nextSound.slice(0, CUSTOM_SOUND_MAX_CHARS));
+          resetLocalGeneration();
+        }}
+        onEmailChange={setEmail}
+        onCheckout={handleCheckout}
+      />
     </main>
   );
 }
@@ -457,6 +486,18 @@ function wait(ms: number): Promise<void> {
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function buildSoundLabel(label: string, customSound: string): string {
+  const custom = customSound
+    .replace(new RegExp(`^${escapeRegExp(label)}(?:\\s+style)?\\s*[,:-]?\\s*`, "i"), "")
+    .trim();
+
+  return custom ? `${label} + ${custom}` : label;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function readJsonResponse<T extends { error?: string }>(
@@ -900,7 +941,7 @@ function ResultScreen({
         {hasLocalResult ? (
           <div className="mt-4 rounded-[16px] border border-[#e7d8d0] bg-white p-3">
             <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-              <span className="font-semibold text-[#2a2228]">Local test output</span>
+              <span className="font-semibold text-[#2a2228]">Your song</span>
               {localGeneration.duration ? (
                 <span className="text-xs text-[#86797f]">{Math.round(localGeneration.duration)}s</span>
               ) : null}
@@ -930,12 +971,559 @@ function ResultScreen({
       >
         <LockKeyhole className="size-4" aria-hidden />
         {checkoutState === "creating"
-          ? localBypass ? "Generating locally..." : "Creating checkout..."
+          ? localBypass ? "Generating your song..." : "Opening unlock..."
           : checkoutState === "redirecting"
             ? "Opening Whop..."
             : "Unlock weekly access"}
         <ArrowRight className="size-4" aria-hidden />
       </Button>
+    </div>
+  );
+}
+
+function DesktopCreator({
+  step,
+  messages,
+  draft,
+  stats,
+  vibe,
+  customSound,
+  soundLabel,
+  email,
+  emailReady,
+  error,
+  checkoutState,
+  isBusy,
+  canUnlock,
+  localBypass,
+  localGeneration,
+  onStart,
+  onBack,
+  onNext,
+  onDraftChange,
+  onAdd,
+  onSample,
+  onRemove,
+  onVibeChange,
+  onCustomSoundChange,
+  onEmailChange,
+  onCheckout,
+}: {
+  step: number;
+  messages: string[];
+  draft: string;
+  stats: MessageStats;
+  vibe: VibeId;
+  customSound: string;
+  soundLabel: string;
+  email: string;
+  emailReady: boolean;
+  error: string | null;
+  checkoutState: CheckoutState;
+  isBusy: boolean;
+  canUnlock: boolean;
+  localBypass: boolean;
+  localGeneration: LocalGenerationState;
+  onStart: () => void;
+  onBack: () => void;
+  onNext: () => void;
+  onDraftChange: (value: string) => void;
+  onAdd: () => void;
+  onSample: () => void;
+  onRemove: (index: number) => void;
+  onVibeChange: (vibe: VibeId) => void;
+  onCustomSoundChange: (sound: string) => void;
+  onEmailChange: (email: string) => void;
+  onCheckout: () => void;
+}) {
+  return (
+    <div className="relative mx-auto hidden min-h-[100dvh] w-full max-w-7xl grid-cols-[minmax(320px,0.86fr)_minmax(560px,1.14fr)] items-center gap-10 px-8 py-8 xl:grid xl:gap-14">
+      <aside className="max-w-xl">
+        <Link href="/" className="text-sm font-semibold tracking-[0.18em] text-[#8a6870]">
+          SONGFROMTEXT
+        </Link>
+        <h1 className="mt-5 max-w-lg font-serif text-[4.6rem] leading-[0.92] text-[#251d23] xl:text-[5.4rem]">
+          Turn their messages into a song.
+        </h1>
+        <p className="mt-6 max-w-md text-[17px] leading-8 text-[#675b61]">
+          Add the exact words they sent, pick the sound, then unlock a full song made from the story.
+        </p>
+
+        <div className="mt-8 grid max-w-md grid-cols-3 gap-2">
+          {["Add messages", "Pick sound", "Unlock"].map((label, index) => (
+            <div
+              key={label}
+              className={cn(
+                "rounded-[16px] border px-3 py-3 text-sm font-semibold transition",
+                index + 1 <= Math.max(step, 1)
+                  ? "border-[#e7cfd7] bg-white/70 text-[#2a2228] shadow-[0_14px_40px_rgba(42,32,24,0.06)]"
+                  : "border-[#eadfd7] bg-white/36 text-[#8a7d83]",
+              )}
+            >
+              <span className="mb-2 grid size-7 place-items-center rounded-full bg-[#f4dfe7] text-xs text-[#a43363]">
+                {index + 1}
+              </span>
+              {label}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-8 max-w-md rounded-[24px] border border-[#eadfd7] bg-white/60 p-5 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
+          <p className="font-serif text-2xl leading-tight text-[#251d23]">{customerFriendlyStatus(step)}</p>
+          <div className="mt-5 space-y-3 text-sm text-[#4f454b]">
+            <ProofRow label="Your wording stays exact" />
+            <ProofRow label="Email saves your result" />
+            <ProofRow label="Preview first, full song after unlock" />
+          </div>
+        </div>
+      </aside>
+
+      <section className="overflow-hidden rounded-[34px] border border-[#eadfd7] bg-[#fffaf5] shadow-[0_30px_100px_rgba(47,33,42,0.14)]">
+        <div className="flex items-center justify-between border-b border-[#eadfd7] px-6 py-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#9c7b83]">
+              Create your song
+            </p>
+            <p className="mt-1 text-sm text-[#74686f]">
+              {step === 0 ? "Start with the story" : `Step ${step} of 3`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {step > 0 ? (
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex h-10 items-center gap-2 rounded-full border border-[#eadfd7] bg-white/70 px-4 text-sm font-semibold text-[#3a3036] transition hover:bg-white active:scale-[0.98]"
+              >
+                <ArrowLeft className="size-4" aria-hidden />
+                Back
+              </button>
+            ) : null}
+            <span className="rounded-full bg-[#f4dfe7] px-3 py-2 text-sm font-semibold text-[#a43363]">
+              Exact lyrics
+            </span>
+          </div>
+        </div>
+
+        <div className="min-h-[650px] p-6">
+          {step === 0 ? <DesktopHookStep onStart={onStart} /> : null}
+          {step === 1 ? (
+            <DesktopMessagesStep
+              messages={messages}
+              draft={draft}
+              stats={stats}
+              error={error}
+              onDraftChange={onDraftChange}
+              onAdd={onAdd}
+              onSample={onSample}
+              onRemove={onRemove}
+              onNext={onNext}
+            />
+          ) : null}
+          {step === 2 ? (
+            <DesktopSoundStep
+              vibe={vibe}
+              customSound={customSound}
+              onVibeChange={onVibeChange}
+              onCustomSoundChange={onCustomSoundChange}
+              onNext={onNext}
+            />
+          ) : null}
+          {step === 3 ? (
+            <DesktopResultStep
+              stats={stats}
+              soundLabel={soundLabel}
+              email={email}
+              emailReady={emailReady}
+              error={error}
+              checkoutState={checkoutState}
+              isBusy={isBusy}
+              canUnlock={canUnlock}
+              localBypass={localBypass}
+              localGeneration={localGeneration}
+              onEmailChange={onEmailChange}
+              onCheckout={onCheckout}
+            />
+          ) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DesktopHookStep({ onStart }: { onStart: () => void }) {
+  return (
+    <div className="grid min-h-[600px] grid-cols-[minmax(0,0.82fr)_minmax(300px,0.55fr)] gap-6">
+      <div
+        className="relative flex overflow-hidden rounded-[28px] bg-[#211619] p-8 text-white"
+        style={{
+          backgroundImage: `linear-gradient(180deg, rgba(36, 24, 28, 0.10), rgba(17, 11, 10, 0.82)), url(${HERO_IMAGE})`,
+          backgroundPosition: "center",
+          backgroundSize: "cover",
+        }}
+      >
+        <div className="mt-auto max-w-md">
+          <h2 className="max-w-[14rem] font-serif text-[3rem] leading-[0.95] text-white">
+            Still thinking about what they said?
+          </h2>
+          <p className="mt-7 max-w-[13rem] -rotate-2 font-serif text-[1.85rem] italic leading-tight text-white/92">
+            Turn it into a song you will never forget.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col rounded-[28px] border border-[#eadfd7] bg-white/76 p-6 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
+        <div className="space-y-3">
+          <div className="max-w-[15rem] rounded-[20px] rounded-bl-[6px] bg-[#f7f0ea] px-4 py-3 text-sm leading-5 text-[#2b2429]">
+            I miss how we used to talk all night.
+          </div>
+          <div className="ml-auto max-w-[16rem] rounded-[20px] rounded-br-[6px] bg-[#5f309b] px-4 py-3 text-sm leading-5 text-white">
+            You promised you would not leave.
+          </div>
+          <div className="max-w-[15rem] rounded-[20px] rounded-bl-[6px] bg-[#f7f0ea] px-4 py-3 text-sm leading-5 text-[#2b2429]">
+            I wish things were different.
+          </div>
+        </div>
+
+        <div className="mt-auto">
+          <p className="mb-4 text-sm leading-6 text-[#675b61]">
+            Start by adding the messages. You will choose the sound and see the preview before the unlock step.
+          </p>
+          <button
+            type="button"
+            onClick={onStart}
+            className="flex h-14 w-full items-center justify-center gap-3 rounded-full bg-[#ff9b8f] text-[16px] font-semibold text-[#201113] shadow-[0_18px_40px_rgba(247,132,118,0.24)] transition hover:bg-[#ffa99e] active:scale-[0.99]"
+          >
+            Start my song
+            <ArrowRight className="size-5" aria-hidden />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DesktopMessagesStep({
+  messages,
+  draft,
+  stats,
+  error,
+  onDraftChange,
+  onAdd,
+  onSample,
+  onRemove,
+  onNext,
+}: {
+  messages: string[];
+  draft: string;
+  stats: MessageStats;
+  error: string | null;
+  onDraftChange: (value: string) => void;
+  onAdd: () => void;
+  onSample: () => void;
+  onRemove: (index: number) => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="grid min-h-[600px] grid-cols-[minmax(0,1fr)_300px] gap-6">
+      <div className="min-h-0">
+        <h2 className="font-serif text-5xl leading-tight text-[#231c21]">Add their messages</h2>
+        <p className="mt-2 text-[16px] leading-7 text-[#685e64]">
+          Paste several lines at once, or add each message one by one.
+        </p>
+
+        <div className="mt-6 grid max-h-[330px] gap-3 overflow-y-auto pr-2">
+          {messages.length ? (
+            messages.map((message, index) => (
+              <MessageBubble
+                key={`${message}-${index}`}
+                message={message}
+                index={index}
+                onRemove={() => onRemove(index)}
+              />
+            ))
+          ) : (
+            <div className="grid min-h-[180px] place-items-center rounded-[24px] border border-dashed border-[#d7c8c0] bg-white/52 p-8 text-center">
+              <div>
+                <p className="font-serif text-2xl text-[#2a2228]">Start with one real message.</p>
+                <p className="mt-2 text-sm leading-6 text-[#74686f]">Every line you add becomes part of the lyrics.</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 rounded-[24px] border border-[#e2d8d0] bg-white p-4 shadow-[0_14px_34px_rgba(42,32,24,0.06)]">
+          <div className="flex items-center justify-between gap-4">
+            <label htmlFor="desktop-message-draft" className="text-[15px] font-semibold text-[#2a2228]">
+              Add more messages
+            </label>
+            <span className={cn("text-sm tabular-nums", stats.tooLong ? "text-red-600" : "text-[#86797f]")}>
+              {stats.count}/{MIN_MESSAGES}
+            </span>
+          </div>
+          <textarea
+            id="desktop-message-draft"
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            placeholder="Paste your messages here..."
+            className="mt-3 min-h-28 w-full resize-none rounded-[16px] border border-[#ded3cb] bg-[#f6f1ed] px-4 py-3 text-[16px] leading-6 text-[#251d23] outline-none placeholder:text-[#a99ea4] focus:border-[#be8ed5] focus:ring-[3px] focus:ring-[#d9b3ea]/30"
+          />
+          <div className="mt-3 flex gap-3">
+            {!messages.length ? (
+              <button
+                type="button"
+                onClick={onSample}
+                className="h-11 rounded-full border border-dashed border-[#c49ed8] bg-[#fdf7ff] px-5 text-sm font-semibold text-[#5e2584] transition hover:bg-[#f8edff] active:scale-[0.99]"
+              >
+                Use sample
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onAdd}
+              disabled={!draft.trim()}
+              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#241b25] px-5 text-sm font-semibold text-white transition hover:bg-[#342838] active:scale-[0.99] disabled:bg-[#ded6cf] disabled:text-[#8f858a]"
+            >
+              <Plus className="size-4" aria-hidden />
+              Add message
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col rounded-[26px] border border-[#eadfd7] bg-white/70 p-5 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
+        <p className="font-serif text-3xl leading-tight text-[#251d23]">Your lyric stack</p>
+        <div className="mt-5 space-y-3">
+          <SummaryLine label="Messages" value={`${stats.count}/${MIN_MESSAGES}`} />
+          <SummaryLine label="Characters" value={`${stats.chars}/${MAX_CHARS}`} />
+          <SummaryLine label="Status" value={stats.ready ? "Ready" : "Needs more"} />
+        </div>
+        <p className={cn("mt-5 text-sm leading-6", error ? "text-red-600" : "text-[#675b61]")}>
+          {error ?? messageHelperText(stats)}
+        </p>
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={!stats.ready}
+          className="mt-auto flex h-12 items-center justify-center gap-2 rounded-full bg-[#17171d] text-[15px] font-semibold text-white shadow-[0_18px_40px_rgba(23,23,29,0.18)] transition hover:bg-[#23232a] active:scale-[0.99] disabled:bg-[#ded6cf] disabled:text-[#8f858a] disabled:shadow-none"
+        >
+          Choose sound
+          <ArrowRight className="size-4" aria-hidden />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DesktopSoundStep({
+  vibe,
+  customSound,
+  onVibeChange,
+  onCustomSoundChange,
+  onNext,
+}: {
+  vibe: VibeId;
+  customSound: string;
+  onVibeChange: (vibe: VibeId) => void;
+  onCustomSoundChange: (sound: string) => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="grid min-h-[600px] grid-cols-[minmax(0,1fr)_330px] gap-6">
+      <div>
+        <h2 className="font-serif text-5xl leading-tight text-[#231c21]">Pick the sound</h2>
+        <p className="mt-2 text-[16px] leading-7 text-[#685e64]">
+          Start with a style, then add a short note for the vocal or mood.
+        </p>
+
+        <div className="mt-7 grid gap-4">
+          {SOUND_CARDS.map((card) => {
+            const selected = card.id === vibe;
+
+            return (
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => onVibeChange(card.id)}
+                className={cn(
+                  "relative min-h-[132px] overflow-hidden rounded-[22px] border text-left text-white shadow-[0_14px_34px_rgba(42,32,24,0.12)] transition hover:-translate-y-0.5 active:translate-y-0",
+                  selected ? "border-[#7c2bb3] ring-[3px] ring-[#7c2bb3]/36" : "border-transparent",
+                )}
+                style={{
+                  backgroundImage: `linear-gradient(90deg, rgba(25, 14, 21, 0.84), rgba(25, 14, 21, 0.26)), url(${card.image})`,
+                  backgroundPosition: "center",
+                  backgroundSize: "cover",
+                }}
+              >
+                <span className="relative flex min-h-[132px] items-center justify-between gap-4 px-6 py-5">
+                  <span>
+                    <span className="block text-[1.95rem] font-semibold leading-[1.05]">{card.label}</span>
+                    <span className="mt-2 block text-sm text-white/86">{card.detail}</span>
+                  </span>
+                  {selected ? (
+                    <span className="grid size-11 place-items-center rounded-full bg-[#8c33bb] text-white">
+                      <Check className="size-6" aria-hidden />
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex flex-col rounded-[26px] border border-[#eadfd7] bg-white/70 p-5 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
+        <p className="font-serif text-3xl leading-tight text-[#251d23]">Make it yours</p>
+        <p className="mt-3 text-sm leading-6 text-[#675b61]">
+          Optional style notes can guide the vocal, tempo, or era without changing the lyrics.
+        </p>
+        <label htmlFor="desktop-custom-sound" className="mt-6 text-sm font-semibold text-[#2a2228]">
+          Custom style notes
+        </label>
+        <textarea
+          id="desktop-custom-sound"
+          value={customSound}
+          onChange={(event) => onCustomSoundChange(event.target.value)}
+          maxLength={CUSTOM_SOUND_MAX_CHARS}
+          placeholder="slow tempo, female vocals, piano and drums, 2000s vibe..."
+          className="mt-3 min-h-44 w-full resize-none rounded-[18px] border border-[#ded3cb] bg-[#f6f1ed] px-4 py-3 text-[16px] leading-6 text-[#251d23] outline-none placeholder:text-[#a99ea4] focus:border-[#be8ed5] focus:ring-[3px] focus:ring-[#d9b3ea]/30"
+        />
+        <p className="mt-2 text-right text-xs tabular-nums text-[#9b8f95]">{customSound.length}/{CUSTOM_SOUND_MAX_CHARS}</p>
+        <button
+          type="button"
+          onClick={onNext}
+          className="mt-auto flex h-12 items-center justify-center gap-2 rounded-full bg-[#6f36a4] text-[15px] font-semibold text-white shadow-[0_18px_40px_rgba(99,50,141,0.22)] transition hover:bg-[#7d42b2] active:scale-[0.99]"
+        >
+          Preview song
+          <ArrowRight className="size-4" aria-hidden />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DesktopResultStep({
+  stats,
+  soundLabel,
+  email,
+  emailReady,
+  error,
+  checkoutState,
+  isBusy,
+  canUnlock,
+  localBypass,
+  localGeneration,
+  onEmailChange,
+  onCheckout,
+}: {
+  stats: MessageStats;
+  soundLabel: string;
+  email: string;
+  emailReady: boolean;
+  error: string | null;
+  checkoutState: CheckoutState;
+  isBusy: boolean;
+  canUnlock: boolean;
+  localBypass: boolean;
+  localGeneration: LocalGenerationState;
+  onEmailChange: (email: string) => void;
+  onCheckout: () => void;
+}) {
+  const hasLocalResult = localGeneration.status === "succeeded" && localGeneration.audioUrl;
+  const isGenerating = localGeneration.status === "queued" || localGeneration.status === "running";
+
+  return (
+    <div className="grid min-h-[600px] grid-cols-[minmax(0,1fr)_340px] gap-6">
+      <div
+        className="relative overflow-hidden rounded-[28px] bg-[#241d22] p-7 text-white shadow-[0_20px_48px_rgba(42,32,24,0.17)]"
+        style={{
+          backgroundImage: `linear-gradient(180deg, rgba(27, 22, 27, 0.12), rgba(27, 22, 27, 0.78)), url(${PREVIEW_IMAGE})`,
+          backgroundPosition: "center",
+          backgroundSize: "cover",
+        }}
+      >
+        <div className="flex min-h-full flex-col justify-end">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/64">Your song preview</p>
+          <h2 className="mt-5 max-w-lg font-serif text-[4rem] italic leading-[0.95] text-white">
+            {previewTitle(stats.firstLine) || "Things you said"}
+          </h2>
+          <div className="mt-8 grid grid-cols-[56px_minmax(0,1fr)_44px] items-center gap-4">
+            <span className="grid size-14 place-items-center rounded-full bg-white text-[#241d22]">
+              <Play className="ml-0.5 size-6 fill-current" aria-hidden />
+            </span>
+            <WaveformBars active={isGenerating || Boolean(hasLocalResult)} seed={stats.chars} />
+            <span className="text-sm tabular-nums text-white/82">0:30</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col rounded-[26px] border border-[#eadfd7] bg-white/78 p-5 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
+        <p className="font-serif text-3xl leading-tight text-[#251d23]">Almost there</p>
+        <p className="mt-3 text-sm leading-6 text-[#675b61]">
+          Add your email to save this setup and unlock the full song.
+        </p>
+
+        <label htmlFor="desktop-email" className="mt-6 text-sm font-semibold text-[#2a2228]">
+          Email
+        </label>
+        <div className="mt-3 grid grid-cols-[44px_minmax(0,1fr)] overflow-hidden rounded-[16px] bg-white shadow-[inset_0_0_0_1px_rgba(71,55,60,0.08)] focus-within:ring-[3px] focus-within:ring-[#d9b3ea]/40">
+          <div className="grid place-items-center text-[#82727c]">
+            <Mail className="size-4" aria-hidden />
+          </div>
+          <input
+            id="desktop-email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => onEmailChange(event.target.value)}
+            placeholder="you@example.com"
+            className="h-12 min-w-0 bg-transparent pr-3 text-[16px] text-[#251d23] outline-none placeholder:text-[#a99ea4]"
+          />
+        </div>
+        {email && !emailReady ? (
+          <p className="mt-2 text-sm text-red-700">Enter a valid email to continue.</p>
+        ) : null}
+
+        <div className="mt-6 space-y-3">
+          <SummaryLine label="Messages" value={`${stats.count} added`} />
+          <SummaryLine label="Sound" value={soundLabel} />
+          <SummaryLine label="Lyrics" value="Exact words" />
+        </div>
+
+        {hasLocalResult ? (
+          <div className="mt-5 rounded-[18px] border border-[#e7d8d0] bg-white p-3">
+            <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+              <span className="font-semibold text-[#2a2228]">Your song</span>
+              {localGeneration.duration ? (
+                <span className="text-xs text-[#86797f]">{Math.round(localGeneration.duration)}s</span>
+              ) : null}
+            </div>
+            <audio controls src={localGeneration.audioUrl} className="w-full" />
+          </div>
+        ) : null}
+
+        {error ? (
+          <p className="mt-4 rounded-[14px] border border-red-200 bg-red-50 px-3 py-2 text-sm leading-5 text-red-700">
+            {error}
+          </p>
+        ) : null}
+
+        <Button
+          type="button"
+          onClick={onCheckout}
+          disabled={!canUnlock || isBusy}
+          className="mt-auto h-12 w-full rounded-full border-0 bg-gradient-to-r from-[#6d35a2] to-[#cb4576] text-[15px] font-semibold text-white shadow-[0_20px_44px_rgba(117,54,128,0.24)] transition hover:opacity-95 active:scale-[0.99] disabled:bg-none disabled:bg-[#ded6cf] disabled:text-[#8f858a] disabled:shadow-none"
+        >
+          <LockKeyhole className="size-4" aria-hidden />
+          {checkoutState === "creating"
+            ? localBypass ? "Generating your song..." : "Opening unlock..."
+            : checkoutState === "redirecting"
+              ? "Opening Whop..."
+              : "Unlock weekly access"}
+          <ArrowRight className="size-4" aria-hidden />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -960,54 +1548,6 @@ function WaveformBars({ active, seed }: { active: boolean; seed: number }) {
   );
 }
 
-function DesktopStoryRail({
-  step,
-  stats,
-  soundLabel,
-}: {
-  step: number;
-  stats: MessageStats;
-  soundLabel: string;
-}) {
-  return (
-    <aside className="hidden self-center lg:block">
-      <p className="text-sm font-semibold tracking-[0.18em] text-[#8a6870]">SONGFROMTEXT</p>
-      <h1 className="mt-4 max-w-sm font-serif text-[4.5rem] leading-[0.92] text-[#251d23]">
-        Turn their messages into a song.
-      </h1>
-      <div className="mt-8 space-y-4 text-sm leading-6 text-[#675b61]">
-        <p>Built for mobile ad traffic: hook first, messages first, sell only after the result feels personal.</p>
-        <div className="rounded-[18px] border border-[#eadfd7] bg-white/55 p-4 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
-          <p className="font-semibold text-[#251d23]">Current setup</p>
-          <div className="mt-3 space-y-2">
-            <SummaryLine label="Step" value={FLOW_STEPS[step]} />
-            <SummaryLine label="Messages" value={`${stats.count}/${MIN_MESSAGES}`} />
-            <SummaryLine label="Sound" value={soundLabel} />
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function DesktopProof({ step }: { step: number }) {
-  return (
-    <aside className="hidden self-end pb-8 lg:block">
-      <div className="rounded-[24px] border border-[#eadfd7] bg-white/58 p-5 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
-        <p className="font-serif text-2xl leading-tight text-[#251d23]">{desktopProofTitle(step)}</p>
-        <p className="mt-3 text-sm leading-6 text-[#675b61]">
-          The price stays out of sight until the user has added real messages and reached a personalized preview.
-        </p>
-        <div className="mt-5 space-y-3 text-sm text-[#4f454b]">
-          <ProofRow label="Email before unlock" />
-          <ProofRow label="Exact words preserved" />
-          <ProofRow label="No Kie cost pre-paywall" />
-        </div>
-      </div>
-    </aside>
-  );
-}
-
 function SummaryLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4 text-sm">
@@ -1029,7 +1569,7 @@ function ProofRow({ label }: { label: string }) {
 }
 
 function messageHelperText(stats: MessageStats): string {
-  if (!stats.hasMessages) return "Add at least five real messages. The price stays hidden.";
+  if (!stats.hasMessages) return "Add at least five real messages to build a stronger song.";
   if (!stats.hasEnoughMessages) return `${MIN_MESSAGES - stats.count} more message${MIN_MESSAGES - stats.count === 1 ? "" : "s"} before the preview.`;
   if (stats.tooLong) return "Trim the transcript before continuing.";
   if (stats.chars < MIN_CHARS) return "Add a little more wording so the hook has weight.";
@@ -1044,11 +1584,11 @@ function messageGateText(stats: MessageStats): string {
   return "Almost there.";
 }
 
-function desktopProofTitle(step: number): string {
-  if (step === 0) return "The hook sells the emotion, not the tool.";
-  if (step === 1) return "The message input feels like building the song.";
-  if (step === 2) return "Sound is simple, visual, and editable.";
-  return "Email and unlock sit on the personalized preview.";
+function customerFriendlyStatus(step: number): string {
+  if (step === 0) return "Start with the messages that still stick in your head.";
+  if (step === 1) return "Add the exact words you want to hear in the song.";
+  if (step === 2) return "Shape the sound without changing the lyrics.";
+  return "Save the preview, then unlock the full song.";
 }
 
 function previewTitle(line: string): string {
