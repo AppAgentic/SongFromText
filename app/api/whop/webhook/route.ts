@@ -14,6 +14,7 @@ import {
   trackCapiPurchase,
   type MetaRequestContext,
 } from "@/lib/meta/capi";
+import { startGenerationForPaidProject } from "@/lib/generation";
 import { getWeeklyPriceGbp, unwrapWebhook } from "@/lib/whop";
 
 export const runtime = "nodejs";
@@ -77,6 +78,8 @@ interface SubscriptionSyncResult {
   ownerId?: string;
   subscriptionId?: string;
   active?: boolean;
+  projectId?: string;
+  generation?: Record<string, unknown>;
   eventType: string;
 }
 
@@ -175,6 +178,7 @@ async function syncSubscriptionFromWhopEvent(
   const subscriptionId = membershipId
     ? `whop_${membershipId}`
     : `user_${ownerId}`;
+  const projectId = getProjectIdFromMetadata(metadata);
 
   const subscriptionPatch = compactObject({
     ownerId,
@@ -220,10 +224,29 @@ async function syncSubscriptionFromWhopEvent(
     subscriptionUpdatedAt: FieldValue.serverTimestamp(),
   });
 
-  await db.batch()
+  const batch = db.batch()
     .set(db.collection("subscriptions").doc(subscriptionId), subscriptionPatch, { merge: true })
-    .set(db.collection("users").doc(ownerId), userPatch, { merge: true })
-    .commit();
+    .set(db.collection("users").doc(ownerId), userPatch, { merge: true });
+
+  if (projectId) {
+    batch.set(
+      db.collection("projects").doc(projectId),
+      compactObject({
+        status: active ? "paid" : "subscription_inactive",
+        subscriptionActive: active,
+        subscriptionStatus: status,
+        subscriptionId,
+        whopMembershipId: membershipId,
+        whopUserId,
+        whopUserEmail,
+        paidAt: active ? FieldValue.serverTimestamp() : undefined,
+        updatedAt: FieldValue.serverTimestamp(),
+      }),
+      { merge: true },
+    );
+  }
+
+  await batch.commit();
 
   await trackPurchaseConversionOnce({
     db,
@@ -235,13 +258,44 @@ async function syncSubscriptionFromWhopEvent(
     active,
   });
 
+  const generation = await startGenerationAfterPurchaseOnce({
+    db,
+    event,
+    active,
+    projectId,
+  });
+
   return {
     updated: true,
     ownerId,
     subscriptionId,
     active,
+    projectId,
+    generation,
     eventType: event.type,
   };
+}
+
+async function startGenerationAfterPurchaseOnce(params: {
+  db: Firestore;
+  event: UnwrapWebhookEvent;
+  active: boolean;
+  projectId?: string;
+}): Promise<Record<string, unknown> | undefined> {
+  if (!params.active || !PURCHASE_CONFIRMATION_EVENT_TYPES.has(params.event.type)) {
+    return undefined;
+  }
+  if (!params.projectId) return undefined;
+
+  try {
+    const result = await startGenerationForPaidProject(params.db, params.projectId);
+    return result as Record<string, unknown>;
+  } catch (error) {
+    console.error("Post-payment generation start failed", error);
+    return {
+      error: error instanceof Error ? error.message : "Generation could not be started.",
+    };
+  }
 }
 
 async function trackPurchaseConversionOnce(params: {
@@ -446,6 +500,11 @@ function getMetadataNumber(
   if (value === null || value === undefined || value === "") return undefined;
   const numberValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
+function getProjectIdFromMetadata(metadata: Record<string, unknown>): string | undefined {
+  return getMetadataString(metadata, "project_id") ??
+    getMetadataString(metadata, "projectId");
 }
 
 function toUnixSeconds(value: unknown): number | undefined {

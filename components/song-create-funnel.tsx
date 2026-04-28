@@ -13,7 +13,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import { signInAnonymously } from "firebase/auth";
+import { onAuthStateChanged, signInAnonymously, type User } from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { identifyFirebaseAnalyticsUser, trackFirebaseAnalyticsEvent } from "@/lib/firebase/analytics";
 import { getFirebaseAuth } from "@/lib/firebase/client";
@@ -150,6 +150,33 @@ interface LocalGenerationResponsePayload {
   issues?: Record<string, string[] | undefined>;
 }
 
+interface RemoteProjectPayload {
+  project?: {
+    id: string;
+    status?: string;
+    subscriptionActive?: boolean;
+    subscriptionStatus?: string;
+    generationStatus?: string;
+    inputText?: string;
+    email?: string;
+    vibe?: VibeId;
+    customSound?: string;
+    generation?: {
+      id?: string;
+      taskId?: string;
+      status?: string;
+      audioUrl?: string;
+      coverUrl?: string;
+      duration?: number;
+      tracks?: LocalGenerationTrack[];
+      error?: string;
+    };
+  };
+  result?: unknown;
+  error?: string;
+  issues?: Record<string, string[] | undefined>;
+}
+
 interface LocalGenerationState {
   status: LocalGenerationStatus;
   taskId?: string;
@@ -185,9 +212,12 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
   const [localGeneration, setLocalGeneration] = useState<LocalGenerationState>({
     status: "idle",
   });
+  const [returnProjectId, setReturnProjectId] = useState<string | null>(null);
+  const [returnStatusText, setReturnStatusText] = useState<string | null>(null);
   const [step, setStep] = useState(variant === "builder" ? 1 : 0);
   const previewTimerRef = useRef<number | null>(null);
   const emailTrackedRef = useRef(false);
+  const isCheckoutReturn = Boolean(returnProjectId);
 
   const stats = useMemo<MessageStats>(() => {
     const cleanMessages = messages.map((message) => message.trim()).filter(Boolean);
@@ -217,9 +247,9 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
   const soundLabel = buildSoundLabel(selectedVibe.label, trimmedCustomSound);
   const emailReady = isValidEmail(email);
   const isBusy = checkoutState !== "idle";
-  const canUnlock = stats.ready && emailReady;
+  const canUnlock = isCheckoutReturn ? localGeneration.status === "failed" : stats.ready && emailReady;
   const firstStep = variant === "builder" ? 1 : 0;
-  const canGoBack = step > firstStep || isPreviewProcessing;
+  const canGoBack = !isCheckoutReturn && (step > firstStep || isPreviewProcessing);
 
   useEffect(() => {
     trackFunnelEvent("create_viewed", {
@@ -229,6 +259,75 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
 
     return () => clearPreviewTimer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const isReturn = params.get("checkout") === "return";
+    const projectId = params.get("projectId")?.trim();
+    if (!isReturn || !projectId) return;
+    const checkedProjectId = projectId;
+
+    let cancelled = false;
+    const setupTimer = window.setTimeout(() => {
+      if (cancelled) return;
+      setReturnProjectId(checkedProjectId);
+      setStep(3);
+      setIsPreviewProcessing(false);
+      setCheckoutState("idle");
+      setError(null);
+      setReturnStatusText("Checking your payment...");
+      setLocalGeneration({ status: "queued" });
+      trackFunnelEvent("checkout_returned", { project_id: checkedProjectId });
+    }, 0);
+    let timer: number | undefined;
+
+    async function pollProject(attempt = 0): Promise<void> {
+      try {
+        const project = await fetchRemoteProject(checkedProjectId);
+        if (cancelled) return;
+
+        applyRemoteProject(project);
+        const generationStatus = normalizeRemoteGenerationStatus(project.generation?.status ?? project.generationStatus);
+        if (generationStatus === "succeeded") {
+          setReturnStatusText("Your full song is ready.");
+          trackFunnelEvent("paid_generation_ready", { project_id: checkedProjectId });
+          return;
+        }
+        if (generationStatus === "failed") {
+          setReturnStatusText("Generation needs a retry.");
+          return;
+        }
+
+        setReturnStatusText(
+          project.status === "checkout_pending" || project.status === "unknown"
+            ? "Waiting for payment confirmation..."
+            : "Making your full song...",
+        );
+
+        if (attempt < 72) {
+          timer = window.setTimeout(() => void pollProject(attempt + 1), attempt < 2 ? 2500 : 5000);
+          return;
+        }
+
+        setReturnStatusText("Still working. Refresh in a moment to check again.");
+      } catch (statusError) {
+        if (cancelled) return;
+        const message = statusError instanceof Error
+          ? statusError.message
+          : "Could not check your song status.";
+        setError(message);
+        setReturnStatusText("Could not check your song yet.");
+      }
+    }
+
+    void pollProject();
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(setupTimer);
+      if (timer) window.clearTimeout(timer);
+    };
   }, []);
 
   function addDraft() {
@@ -408,6 +507,11 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
   }
 
   async function handleCheckout() {
+    if (returnProjectId) {
+      await retryRemoteGeneration(returnProjectId);
+      return;
+    }
+
     trackFunnelEvent("unlock_clicked", {
       ready: stats.ready,
       email_ready: emailReady,
@@ -616,6 +720,87 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
     throw new Error("Generation is still running. Try checking again in a moment.");
   }
 
+  async function fetchRemoteProject(projectId: string): Promise<NonNullable<RemoteProjectPayload["project"]>> {
+    const user = await waitForExistingFirebaseUser();
+    if (!user) {
+      throw new Error("We could not restore your checkout session. Use the same browser you paid with.");
+    }
+    identifyFirebaseAnalyticsUser(user.uid);
+    const token = await user.getIdToken();
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    });
+    const payload = await readJsonResponse<RemoteProjectPayload>(response);
+
+    if (!response.ok || !payload.project) {
+      throw new Error(payload.error ?? "Could not load your song status.");
+    }
+
+    return payload.project;
+  }
+
+  async function retryRemoteGeneration(projectId: string): Promise<void> {
+    setError(null);
+    setCheckoutState("creating");
+    setReturnStatusText("Retrying generation...");
+
+    try {
+      const user = await waitForExistingFirebaseUser();
+      if (!user) {
+        throw new Error("We could not restore your checkout session. Use the same browser you paid with.");
+      }
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      });
+      const payload = await readJsonResponse<RemoteProjectPayload>(response);
+
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error ?? "Could not retry generation.");
+      }
+
+      applyRemoteProject(payload.project);
+      setReturnStatusText("Making your full song...");
+      trackFunnelEvent("paid_generation_retry", { project_id: projectId });
+    } catch (retryError) {
+      const message = retryError instanceof Error
+        ? retryError.message
+        : "Could not retry generation.";
+      setError(message);
+      setReturnStatusText("Retry failed.");
+    } finally {
+      setCheckoutState("idle");
+    }
+  }
+
+  function applyRemoteProject(project: NonNullable<RemoteProjectPayload["project"]>): void {
+    const remoteText = project.inputText?.trim();
+    if (remoteText) {
+      setMessages(remoteText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+    }
+    if (project.vibe) setVibe(project.vibe);
+    setCustomSound(project.customSound ?? "");
+    setEmail(project.email ?? "");
+    setStep(3);
+    setIsPreviewProcessing(false);
+
+    const generation = project.generation;
+    const firstTrack = generation?.tracks?.find((track) => track.audioUrl) ?? generation?.tracks?.[0];
+    setLocalGeneration({
+      status: normalizeRemoteGenerationStatus(generation?.status ?? project.generationStatus),
+      taskId: generation?.taskId,
+      audioUrl: generation?.audioUrl ?? firstTrack?.audioUrl,
+      coverUrl: generation?.coverUrl ?? firstTrack?.imageUrl,
+      duration: generation?.duration ?? firstTrack?.duration,
+      error: generation?.error,
+    });
+  }
+
   return (
     <main className="min-h-[100dvh] overflow-hidden bg-[#f7f0ea] text-[#241b25]">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_12%_8%,rgba(247,132,118,0.18),transparent_30%),radial-gradient(circle_at_88%_10%,rgba(97,52,141,0.11),transparent_28%)]" />
@@ -674,6 +859,8 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
                   canUnlock={canUnlock}
                   localBypass={LOCAL_PURCHASE_BYPASS}
                   localGeneration={localGeneration}
+                  checkoutReturn={isCheckoutReturn}
+                  returnStatusText={returnStatusText}
                   onEmailChange={handleEmailChange}
                   onCheckout={handleCheckout}
                 />
@@ -701,6 +888,8 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
         canUnlock={canUnlock}
         localBypass={LOCAL_PURCHASE_BYPASS}
         localGeneration={localGeneration}
+        checkoutReturn={isCheckoutReturn}
+        returnStatusText={returnStatusText}
         soundRefineOpen={soundRefineOpen}
         onStart={() => setStep(1)}
         onBack={goBack}
@@ -722,6 +911,40 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function waitForExistingFirebaseUser(): Promise<User | null> {
+  const auth = getFirebaseAuth();
+  if (auth.currentUser) return Promise.resolve(auth.currentUser);
+
+  return new Promise((resolve) => {
+    let unsubscribe: () => void = () => {};
+    const timeout = window.setTimeout(() => {
+      unsubscribe();
+      resolve(auth.currentUser);
+    }, 3500);
+    unsubscribe = onAuthStateChanged(auth, (user) => {
+      window.clearTimeout(timeout);
+      unsubscribe();
+      resolve(user);
+    });
+  });
+}
+
+function normalizeRemoteGenerationStatus(status: string | undefined): LocalGenerationStatus {
+  switch (status) {
+    case "succeeded":
+      return "succeeded";
+    case "failed":
+      return "failed";
+    case "running":
+      return "running";
+    case "starting":
+    case "queued":
+    case "not_started":
+    default:
+      return "queued";
+  }
 }
 
 function trackFunnelEvent(eventName: string, properties: Record<string, unknown> = {}): void {
@@ -1252,6 +1475,8 @@ function ResultScreen({
   canUnlock,
   localBypass,
   localGeneration,
+  checkoutReturn,
+  returnStatusText,
   onEmailChange,
   onCheckout,
 }: {
@@ -1265,17 +1490,29 @@ function ResultScreen({
   canUnlock: boolean;
   localBypass: boolean;
   localGeneration: LocalGenerationState;
+  checkoutReturn: boolean;
+  returnStatusText: string | null;
   onEmailChange: (email: string) => void;
   onCheckout: () => void;
 }) {
   const hasLocalResult = localGeneration.status === "succeeded" && localGeneration.audioUrl;
   const isGenerating = localGeneration.status === "queued" || localGeneration.status === "running";
+  const title = checkoutReturn
+    ? hasLocalResult
+      ? "Your full song is ready"
+      : localGeneration.status === "failed"
+        ? "Generation needs a retry"
+        : "Making your full song"
+    : "Your song is ready";
+  const subtitle = checkoutReturn
+    ? returnStatusText ?? "Payment confirmed"
+    : "Locked preview";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col pb-1 pt-6">
       <div className="shrink-0 px-1 text-center">
-        <h2 className="font-serif text-[2rem] leading-tight text-[#231c21]">Your song is ready</h2>
-        <p className="mt-1 text-[15px] leading-6 text-[#685e64]">Locked preview</p>
+        <h2 className="font-serif text-[2rem] leading-tight text-[#231c21]">{title}</h2>
+        <p className="mt-1 text-[15px] leading-6 text-[#685e64]">{subtitle}</p>
       </div>
 
       <div className="mt-5 min-h-0 flex-1 overflow-y-auto pb-4 pr-1">
@@ -1288,7 +1525,7 @@ function ResultScreen({
           }}
         >
           <div className="absolute left-4 top-4 rounded-full bg-white/14 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md">
-            Locked preview
+            {checkoutReturn ? "Full song" : "Locked preview"}
           </div>
           <div className="flex min-h-[205px] flex-col justify-end">
             <p className="mx-auto max-w-[14rem] text-center font-serif text-[2rem] italic leading-[1.03] text-white">
@@ -1303,12 +1540,28 @@ function ResultScreen({
                 )}
               </span>
               <WaveformBars active={isGenerating || Boolean(hasLocalResult)} seed={stats.chars} />
-              <span className="text-xs tabular-nums text-white/82">0:30</span>
+              <span className="text-xs tabular-nums text-white/82">
+                {hasLocalResult && localGeneration.duration ? `${Math.round(localGeneration.duration)}s` : "0:30"}
+              </span>
             </div>
           </div>
         </div>
 
-        <div className="mt-4 rounded-[20px] border border-[#ead7eb] bg-[#f2dff2] p-4 shadow-[0_14px_34px_rgba(82,56,88,0.08)]">
+        {checkoutReturn ? (
+          <div className="mt-4 rounded-[20px] border border-[#ead7eb] bg-[#f2dff2] p-4 shadow-[0_14px_34px_rgba(82,56,88,0.08)]">
+            <p className="text-[16px] font-semibold text-[#5f2584]">
+              {hasLocalResult ? "Ready to play" : localGeneration.status === "failed" ? "We can retry this" : "Generation in progress"}
+            </p>
+            <p className="mt-1 text-[13px] leading-5 text-[#4c4149]">
+              {hasLocalResult
+                ? "Your song was generated from the exact messages you added."
+                : localGeneration.status === "failed"
+                  ? "The payment is saved. Retry generation without paying again."
+                  : "This usually takes a couple of minutes. You can keep this tab open while it finishes."}
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-[20px] border border-[#ead7eb] bg-[#f2dff2] p-4 shadow-[0_14px_34px_rgba(82,56,88,0.08)]">
           <p className="text-[16px] font-semibold text-[#5f2584]">Save it before unlock</p>
           <p className="mt-1 text-[13px] leading-5 text-[#4c4149]">
             Enter your email so your song setup does not disappear.
@@ -1330,9 +1583,11 @@ function ResultScreen({
           {email && !emailReady ? (
             <p className="mt-2 text-sm text-red-700">Enter a valid email to continue.</p>
           ) : null}
-        </div>
+          </div>
+        )}
 
-        <div className="mt-4 rounded-[20px] border border-[#e7d8d0] bg-white p-4 shadow-[0_14px_34px_rgba(42,32,24,0.06)]">
+        {!checkoutReturn ? (
+          <div className="mt-4 rounded-[20px] border border-[#e7d8d0] bg-white p-4 shadow-[0_14px_34px_rgba(42,32,24,0.06)]">
           <div className="flex items-end justify-between gap-3">
             <div>
               <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-[#9c7b83]">
@@ -1347,7 +1602,8 @@ function ResultScreen({
               <ProofRow key={benefit} label={benefit} />
             ))}
           </div>
-        </div>
+          </div>
+        ) : null}
 
         {hasLocalResult ? (
           <div className="mt-4 rounded-[16px] border border-[#e7d8d0] bg-white p-3">
@@ -1377,11 +1633,17 @@ function ResultScreen({
       <Button
         type="button"
         onClick={onCheckout}
-        disabled={!canUnlock || isBusy}
+        disabled={!canUnlock || isBusy || (checkoutReturn && localGeneration.status !== "failed")}
         className="shrink-0 h-14 w-full rounded-full border-0 bg-gradient-to-r from-[#6d35a2] to-[#cb4576] text-[16px] font-semibold text-white shadow-[0_20px_44px_rgba(117,54,128,0.24)] transition hover:opacity-95 active:scale-[0.99] disabled:bg-none disabled:bg-[#ded6cf] disabled:text-[#8f858a] disabled:shadow-none"
       >
-        <LockKeyhole className="size-4" aria-hidden />
-        {checkoutState === "creating"
+        {checkoutReturn && hasLocalResult ? <Play className="size-4" aria-hidden /> : <LockKeyhole className="size-4" aria-hidden />}
+        {checkoutReturn
+          ? hasLocalResult
+            ? "Song ready above"
+            : localGeneration.status === "failed"
+              ? checkoutState === "creating" ? "Retrying..." : "Retry generation"
+              : "Generating your song..."
+          : checkoutState === "creating"
             ? localBypass ? "Generating your song..." : "Opening unlock..."
             : checkoutState === "redirecting"
               ? "Opening Whop..."
@@ -1410,6 +1672,8 @@ function DesktopCreator({
   canUnlock,
   localBypass,
   localGeneration,
+  checkoutReturn,
+  returnStatusText,
   soundRefineOpen,
   onStart,
   onBack,
@@ -1442,6 +1706,8 @@ function DesktopCreator({
   canUnlock: boolean;
   localBypass: boolean;
   localGeneration: LocalGenerationState;
+  checkoutReturn: boolean;
+  returnStatusText: string | null;
   soundRefineOpen: boolean;
   onStart: () => void;
   onBack: () => void;
@@ -1619,6 +1885,8 @@ function DesktopCreator({
               canUnlock={canUnlock}
               localBypass={localBypass}
               localGeneration={localGeneration}
+              checkoutReturn={checkoutReturn}
+              returnStatusText={returnStatusText}
               onEmailChange={onEmailChange}
               onCheckout={onCheckout}
             />
@@ -1987,6 +2255,8 @@ function DesktopResultStep({
   canUnlock,
   localBypass,
   localGeneration,
+  checkoutReturn,
+  returnStatusText,
   onEmailChange,
   onCheckout,
 }: {
@@ -2000,11 +2270,23 @@ function DesktopResultStep({
   canUnlock: boolean;
   localBypass: boolean;
   localGeneration: LocalGenerationState;
+  checkoutReturn: boolean;
+  returnStatusText: string | null;
   onEmailChange: (email: string) => void;
   onCheckout: () => void;
 }) {
   const hasLocalResult = localGeneration.status === "succeeded" && localGeneration.audioUrl;
   const isGenerating = localGeneration.status === "queued" || localGeneration.status === "running";
+  const headline = checkoutReturn
+    ? hasLocalResult
+      ? "Your full song is ready"
+      : localGeneration.status === "failed"
+        ? "Generation needs a retry"
+        : "Making your full song"
+    : "Unlock your full song";
+  const description = checkoutReturn
+    ? returnStatusText ?? "Payment confirmed"
+    : "Save the setup with your email, then continue to Whop to unlock the full version.";
 
   return (
     <div className="grid min-h-[600px] grid-cols-[minmax(0,1fr)_340px] gap-6">
@@ -2017,7 +2299,7 @@ function DesktopResultStep({
         }}
       >
         <div className="absolute left-7 top-7 rounded-full bg-white/14 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md">
-          Locked preview
+          {checkoutReturn ? "Full song" : "Locked preview"}
         </div>
         <div className="flex min-h-full flex-col justify-end">
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/64">Your song is ready</p>
@@ -2033,17 +2315,21 @@ function DesktopResultStep({
               )}
             </span>
             <WaveformBars active={isGenerating || Boolean(hasLocalResult)} seed={stats.chars} />
-            <span className="text-sm tabular-nums text-white/82">0:30</span>
+            <span className="text-sm tabular-nums text-white/82">
+              {hasLocalResult && localGeneration.duration ? `${Math.round(localGeneration.duration)}s` : "0:30"}
+            </span>
           </div>
         </div>
       </div>
 
       <div className="flex flex-col rounded-[26px] border border-[#eadfd7] bg-white/78 p-5 shadow-[0_18px_60px_rgba(42,32,24,0.06)]">
-        <p className="font-serif text-3xl leading-tight text-[#251d23]">Unlock your full song</p>
+        <p className="font-serif text-3xl leading-tight text-[#251d23]">{headline}</p>
         <p className="mt-3 text-sm leading-6 text-[#675b61]">
-          Save the setup with your email, then continue to Whop to unlock the full version.
+          {description}
         </p>
 
+        {!checkoutReturn ? (
+          <>
         <label htmlFor="desktop-email" className="mt-6 text-sm font-semibold text-[#2a2228]">
           Email
         </label>
@@ -2065,6 +2351,21 @@ function DesktopResultStep({
         {email && !emailReady ? (
           <p className="mt-2 text-sm text-red-700">Enter a valid email to continue.</p>
         ) : null}
+          </>
+        ) : (
+          <div className="mt-6 rounded-[18px] border border-[#ead7eb] bg-[#f2dff2] p-4">
+            <p className="text-sm font-semibold text-[#5f2584]">
+              {hasLocalResult ? "Ready to play" : localGeneration.status === "failed" ? "Retry available" : "Processing"}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-[#4c4149]">
+              {hasLocalResult
+                ? "Your exact-message song is ready below."
+                : localGeneration.status === "failed"
+                  ? "Your payment is saved. Retry without paying again."
+                  : "This usually takes a couple of minutes while Kie finishes the audio."}
+            </p>
+          </div>
+        )}
 
         <div className="mt-6 space-y-3">
           <SummaryLine label="Messages" value={`${stats.count} added`} />
@@ -2072,7 +2373,8 @@ function DesktopResultStep({
           <SummaryLine label="Lyrics" value="Exact words" />
         </div>
 
-        <div className="mt-5 rounded-[20px] border border-[#e7d8d0] bg-white p-4">
+        {!checkoutReturn ? (
+          <div className="mt-5 rounded-[20px] border border-[#e7d8d0] bg-white p-4">
           <div className="flex items-end justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9c7b83]">
@@ -2087,7 +2389,8 @@ function DesktopResultStep({
               <ProofRow key={benefit} label={benefit} />
             ))}
           </div>
-        </div>
+          </div>
+        ) : null}
 
         {hasLocalResult ? (
           <div className="mt-5 rounded-[18px] border border-[#e7d8d0] bg-white p-3">
@@ -2110,11 +2413,17 @@ function DesktopResultStep({
         <Button
           type="button"
           onClick={onCheckout}
-          disabled={!canUnlock || isBusy}
+          disabled={!canUnlock || isBusy || (checkoutReturn && localGeneration.status !== "failed")}
           className="mt-auto h-12 w-full rounded-full border-0 bg-gradient-to-r from-[#6d35a2] to-[#cb4576] text-[15px] font-semibold text-white shadow-[0_20px_44px_rgba(117,54,128,0.24)] transition hover:opacity-95 active:scale-[0.99] disabled:bg-none disabled:bg-[#ded6cf] disabled:text-[#8f858a] disabled:shadow-none"
         >
-          <LockKeyhole className="size-4" aria-hidden />
-          {checkoutState === "creating"
+          {checkoutReturn && hasLocalResult ? <Play className="size-4" aria-hidden /> : <LockKeyhole className="size-4" aria-hidden />}
+          {checkoutReturn
+            ? hasLocalResult
+              ? "Song ready above"
+              : localGeneration.status === "failed"
+                ? checkoutState === "creating" ? "Retrying..." : "Retry generation"
+                : "Generating your song..."
+            : checkoutState === "creating"
             ? localBypass ? "Generating your song..." : "Opening unlock..."
             : checkoutState === "redirecting"
               ? "Opening Whop..."
