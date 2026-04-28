@@ -103,6 +103,7 @@ META_TEST_EVENT_CODE=
 3. **Cheap before payment, expensive after** — no Kie jobs before Whop checkout success.
 4. **Messaging**: "Turn their messages into a song." NEVER frame as "generic AI music studio."
 5. **One paid product** — weekly sub only. No monthly, no annual, no free tier.
+6. **Account before price** — users must create/sign into Firebase Auth before the weekly price or Whop checkout is shown, improving Meta CAPI attribution and song retrieval.
 
 ## Key Integration Points
 - **Kie.ai Suno API** — music generation, custom mode (forces our lyrics). Polling or webhook for job completion.

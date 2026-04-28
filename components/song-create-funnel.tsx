@@ -13,7 +13,12 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import { onAuthStateChanged, signInAnonymously, type User } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  type User,
+} from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { identifyFirebaseAnalyticsUser, trackFirebaseAnalyticsEvent } from "@/lib/firebase/analytics";
 import { getFirebaseAuth } from "@/lib/firebase/client";
@@ -109,6 +114,8 @@ const SOUND_CARDS: Array<{
 ];
 
 type CheckoutState = "idle" | "creating" | "redirecting";
+type AccountMode = "create" | "sign-in";
+type AccountState = "idle" | "submitting";
 type FunnelVariant = "builder" | "quiz";
 type LocalGenerationStatus = "idle" | "queued" | "running" | "succeeded" | "failed";
 
@@ -206,6 +213,10 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
   const [customSound, setCustomSound] = useState("");
   const [soundRefineOpen, setSoundRefineOpen] = useState(false);
   const [email, setEmail] = useState("");
+  const [accountPassword, setAccountPassword] = useState("");
+  const [accountMode, setAccountMode] = useState<AccountMode>("create");
+  const [accountState, setAccountState] = useState<AccountState>("idle");
+  const [authUser, setAuthUser] = useState<User | null>(null);
   const [checkoutState, setCheckoutState] = useState<CheckoutState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [isPreviewProcessing, setIsPreviewProcessing] = useState(false);
@@ -247,7 +258,10 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
   const soundLabel = buildSoundLabel(selectedVibe.label, trimmedCustomSound);
   const emailReady = isValidEmail(email);
   const isBusy = checkoutState !== "idle";
-  const canUnlock = isCheckoutReturn ? localGeneration.status === "failed" : stats.ready && emailReady;
+  const accountReady = Boolean(authUser && !authUser.isAnonymous);
+  const canUnlock = isCheckoutReturn
+    ? localGeneration.status === "failed"
+    : stats.ready && emailReady && accountReady;
   const firstStep = variant === "builder" ? 1 : 0;
   const canGoBack = !isCheckoutReturn && (step > firstStep || isPreviewProcessing);
 
@@ -259,6 +273,20 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
 
     return () => clearPreviewTimer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(getFirebaseAuth(), (user) => {
+      setAuthUser(user);
+      if (user?.email) {
+        setEmail((current) => current || user.email || "");
+      }
+      if (user && !user.isAnonymous) {
+        identifyFirebaseAnalyticsUser(user.uid);
+      }
+    });
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -494,15 +522,71 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
     handleCustomSoundChange([...parts, note].join(", "));
   }
 
+  function trackLeadOnce(emailAddress: string) {
+    if (emailTrackedRef.current) return;
+    emailTrackedRef.current = true;
+    trackLeadConversion(emailAddress);
+  }
+
   function handleEmailChange(nextEmail: string) {
     setEmail(nextEmail);
-    if (!emailTrackedRef.current && isValidEmail(nextEmail)) {
-      emailTrackedRef.current = true;
+    if (isValidEmail(nextEmail)) {
       trackFunnelEvent("email_submitted", {
         message_count: stats.count,
         char_count: stats.chars,
       });
-      trackLeadConversion(nextEmail.trim().toLowerCase());
+      trackLeadOnce(nextEmail.trim().toLowerCase());
+    }
+  }
+
+  async function handleAccountSubmit() {
+    const normalizedEmail = email.trim().toLowerCase();
+    trackFunnelEvent("account_submit_clicked", {
+      mode: accountMode,
+      email_ready: emailReady,
+      message_count: stats.count,
+      char_count: stats.chars,
+    });
+
+    if (!emailReady) {
+      setError("Enter a valid email to create your account.");
+      return;
+    }
+    if (accountPassword.length < 6) {
+      setError("Use at least 6 characters for your password.");
+      return;
+    }
+
+    setError(null);
+    setAccountState("submitting");
+
+    try {
+      const auth = getFirebaseAuth();
+      const credential = accountMode === "create"
+        ? await createUserWithEmailAndPassword(auth, normalizedEmail, accountPassword)
+        : await signInWithEmailAndPassword(auth, normalizedEmail, accountPassword);
+
+      setAuthUser(credential.user);
+      identifyFirebaseAnalyticsUser(credential.user.uid);
+      trackLeadOnce(normalizedEmail);
+      trackFunnelEvent(accountMode === "create" ? "account_created" : "account_signed_in", {
+        provider: "password",
+      });
+      setError(null);
+    } catch (authError) {
+      const code = getFirebaseAuthCode(authError);
+      if (code === "auth/email-already-in-use") {
+        setAccountMode("sign-in");
+        setError("That email already has an account. Enter the password to sign in.");
+      } else {
+        setError(getAccountErrorMessage(code));
+      }
+      trackFunnelEvent("account_error", {
+        mode: accountMode,
+        code,
+      });
+    } finally {
+      setAccountState("idle");
     }
   }
 
@@ -533,7 +617,12 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
     }
     if (!emailReady) {
       setStep(3);
-      setError("Enter a valid email so we can save your result before unlock.");
+      setError("Create your account before unlock.");
+      return;
+    }
+    if (!accountReady) {
+      setStep(3);
+      setError("Create your account before we show pricing or unlock generation.");
       return;
     }
 
@@ -547,11 +636,12 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
 
     try {
       const auth = getFirebaseAuth();
-      const credential = auth.currentUser
-        ? { user: auth.currentUser }
-        : await signInAnonymously(auth);
-      identifyFirebaseAnalyticsUser(credential.user.uid);
-      const token = await credential.user.getIdToken();
+      const user = auth.currentUser;
+      if (!user || user.isAnonymous) {
+        throw new Error("Create your account before unlock.");
+      }
+      identifyFirebaseAnalyticsUser(user.uid);
+      const token = await user.getIdToken();
 
       const response = await fetch("/api/whop/checkout", {
         method: "POST",
@@ -574,7 +664,7 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
         const firstIssue = payload.issues
           ? Object.values(payload.issues).flat().find(Boolean)
           : undefined;
-        throw new Error(firstIssue ?? payload.error ?? "Checkout could not be created.");
+        throw new Error(firstIssue ?? getCheckoutErrorMessage(payload.error) ?? "Checkout could not be created.");
       }
 
       trackFunnelEvent("checkout_created", {
@@ -857,11 +947,18 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
                   checkoutState={checkoutState}
                   isBusy={isBusy}
                   canUnlock={canUnlock}
+                  accountReady={accountReady}
+                  accountPassword={accountPassword}
+                  accountMode={accountMode}
+                  accountState={accountState}
                   localBypass={LOCAL_PURCHASE_BYPASS}
                   localGeneration={localGeneration}
                   checkoutReturn={isCheckoutReturn}
                   returnStatusText={returnStatusText}
                   onEmailChange={handleEmailChange}
+                  onPasswordChange={setAccountPassword}
+                  onAccountModeChange={setAccountMode}
+                  onAccountSubmit={handleAccountSubmit}
                   onCheckout={handleCheckout}
                 />
               ) : null}
@@ -886,6 +983,10 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
         checkoutState={checkoutState}
         isBusy={isBusy}
         canUnlock={canUnlock}
+        accountReady={accountReady}
+        accountPassword={accountPassword}
+        accountMode={accountMode}
+        accountState={accountState}
         localBypass={LOCAL_PURCHASE_BYPASS}
         localGeneration={localGeneration}
         checkoutReturn={isCheckoutReturn}
@@ -903,6 +1004,9 @@ export function SongCreateFunnel({ variant = "quiz" }: { variant?: FunnelVariant
         onOpenRefine={openSoundRefine}
         onAppendSoundNote={appendSoundNote}
         onEmailChange={handleEmailChange}
+        onPasswordChange={setAccountPassword}
+        onAccountModeChange={setAccountMode}
+        onAccountSubmit={handleAccountSubmit}
         onCheckout={handleCheckout}
       />
     </main>
@@ -1000,6 +1104,49 @@ function buildBrowserEventId(prefix: string): string {
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function getFirebaseAuthCode(error: unknown): string {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+  }
+
+  return "unknown";
+}
+
+function getAccountErrorMessage(code: string): string {
+  switch (code) {
+    case "auth/email-already-in-use":
+      return "That email already has an account. Sign in instead.";
+    case "auth/invalid-email":
+      return "Enter a valid email address.";
+    case "auth/weak-password":
+      return "Use at least 6 characters for your password.";
+    case "auth/wrong-password":
+    case "auth/invalid-credential":
+    case "auth/user-not-found":
+      return "That email and password did not match.";
+    case "auth/too-many-requests":
+      return "Too many attempts. Try again in a few minutes.";
+    case "auth/operation-not-allowed":
+      return "Email/password accounts are not enabled yet in Firebase Auth.";
+    default:
+      return "Could not create or sign in to your account.";
+  }
+}
+
+function getCheckoutErrorMessage(code: string | undefined): string | undefined {
+  switch (code) {
+    case "account_required":
+    case "missing_auth":
+    case "invalid_auth":
+      return "Create or sign in to your account before unlocking.";
+    case "email_mismatch":
+      return "Use the same email you signed in with.";
+    default:
+      return code;
+  }
 }
 
 function buildSoundLabel(label: string, customSound: string): string {
@@ -1473,11 +1620,18 @@ function ResultScreen({
   checkoutState,
   isBusy,
   canUnlock,
+  accountReady,
+  accountPassword,
+  accountMode,
+  accountState,
   localBypass,
   localGeneration,
   checkoutReturn,
   returnStatusText,
   onEmailChange,
+  onPasswordChange,
+  onAccountModeChange,
+  onAccountSubmit,
   onCheckout,
 }: {
   stats: MessageStats;
@@ -1488,11 +1642,18 @@ function ResultScreen({
   checkoutState: CheckoutState;
   isBusy: boolean;
   canUnlock: boolean;
+  accountReady: boolean;
+  accountPassword: string;
+  accountMode: AccountMode;
+  accountState: AccountState;
   localBypass: boolean;
   localGeneration: LocalGenerationState;
   checkoutReturn: boolean;
   returnStatusText: string | null;
   onEmailChange: (email: string) => void;
+  onPasswordChange: (password: string) => void;
+  onAccountModeChange: (mode: AccountMode) => void;
+  onAccountSubmit: () => void;
   onCheckout: () => void;
 }) {
   const hasLocalResult = localGeneration.status === "succeeded" && localGeneration.audioUrl;
@@ -1560,33 +1721,32 @@ function ResultScreen({
                   : "This usually takes a couple of minutes. You can keep this tab open while it finishes."}
             </p>
           </div>
+        ) : !accountReady ? (
+          <AccountGate
+            compact
+            email={email}
+            emailReady={emailReady}
+            password={accountPassword}
+            mode={accountMode}
+            state={accountState}
+            onEmailChange={onEmailChange}
+            onPasswordChange={onPasswordChange}
+            onModeChange={onAccountModeChange}
+            onSubmit={onAccountSubmit}
+          />
         ) : (
           <div className="mt-4 rounded-[20px] border border-[#ead7eb] bg-[#f2dff2] p-4 shadow-[0_14px_34px_rgba(82,56,88,0.08)]">
-          <p className="text-[16px] font-semibold text-[#5f2584]">Save it before unlock</p>
+          <p className="text-[16px] font-semibold text-[#5f2584]">Account ready</p>
           <p className="mt-1 text-[13px] leading-5 text-[#4c4149]">
-            Enter your email so your song setup does not disappear.
+            We will save this song to your account after checkout.
           </p>
-          <div className="mt-4 grid grid-cols-[42px_minmax(0,1fr)] overflow-hidden rounded-[14px] bg-white shadow-[inset_0_0_0_1px_rgba(71,55,60,0.08)] focus-within:ring-[3px] focus-within:ring-[#d9b3ea]/40">
-            <div className="grid place-items-center text-[#82727c]">
-              <Mail className="size-4" aria-hidden />
-            </div>
-            <input
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => onEmailChange(event.target.value)}
-              placeholder="you@example.com"
-              className="h-12 min-w-0 bg-transparent pr-3 text-[16px] text-[#251d23] outline-none placeholder:text-[#a99ea4]"
-            />
-          </div>
-          {email && !emailReady ? (
-            <p className="mt-2 text-sm text-red-700">Enter a valid email to continue.</p>
-          ) : null}
+          <p className="mt-3 rounded-[14px] bg-white px-4 py-3 text-sm font-semibold text-[#2a2228]">
+            {email}
+          </p>
           </div>
         )}
 
-        {!checkoutReturn ? (
+        {!checkoutReturn && accountReady ? (
           <div className="mt-4 rounded-[20px] border border-[#e7d8d0] bg-white p-4 shadow-[0_14px_34px_rgba(42,32,24,0.06)]">
           <div className="flex items-end justify-between gap-3">
             <div>
@@ -1630,26 +1790,116 @@ function ResultScreen({
         )}
       </div>
 
-      <Button
+      {checkoutReturn || accountReady ? (
+        <Button
+          type="button"
+          onClick={onCheckout}
+          disabled={!canUnlock || isBusy || (checkoutReturn && localGeneration.status !== "failed")}
+          className="shrink-0 h-14 w-full rounded-full border-0 bg-gradient-to-r from-[#6d35a2] to-[#cb4576] text-[16px] font-semibold text-white shadow-[0_20px_44px_rgba(117,54,128,0.24)] transition hover:opacity-95 active:scale-[0.99] disabled:bg-none disabled:bg-[#ded6cf] disabled:text-[#8f858a] disabled:shadow-none"
+        >
+          {checkoutReturn && hasLocalResult ? <Play className="size-4" aria-hidden /> : <LockKeyhole className="size-4" aria-hidden />}
+          {checkoutReturn
+            ? hasLocalResult
+              ? "Song ready above"
+              : localGeneration.status === "failed"
+                ? checkoutState === "creating" ? "Retrying..." : "Retry generation"
+                : "Generating your song..."
+            : checkoutState === "creating"
+              ? localBypass ? "Generating your song..." : "Opening unlock..."
+              : checkoutState === "redirecting"
+                ? "Opening Whop..."
+                : "Unlock my full song"}
+          <ArrowRight className="size-4" aria-hidden />
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function AccountGate({
+  compact = false,
+  email,
+  emailReady,
+  password,
+  mode,
+  state,
+  onEmailChange,
+  onPasswordChange,
+  onModeChange,
+  onSubmit,
+}: {
+  compact?: boolean;
+  email: string;
+  emailReady: boolean;
+  password: string;
+  mode: AccountMode;
+  state: AccountState;
+  onEmailChange: (email: string) => void;
+  onPasswordChange: (password: string) => void;
+  onModeChange: (mode: AccountMode) => void;
+  onSubmit: () => void;
+}) {
+  const submitting = state === "submitting";
+
+  return (
+    <div className={cn(
+      "rounded-[20px] border border-[#ead7eb] bg-[#f2dff2] p-4 shadow-[0_14px_34px_rgba(82,56,88,0.08)]",
+      compact ? "mt-4" : "mt-6",
+    )}>
+      <p className="text-[16px] font-semibold text-[#5f2584]">
+        Create your account first
+      </p>
+      <p className="mt-1 text-[13px] leading-5 text-[#4c4149]">
+        We will save your song and use your email for better purchase attribution.
+      </p>
+
+      <div className="mt-4 grid grid-cols-[42px_minmax(0,1fr)] overflow-hidden rounded-[14px] bg-white shadow-[inset_0_0_0_1px_rgba(71,55,60,0.08)] focus-within:ring-[3px] focus-within:ring-[#d9b3ea]/40">
+        <div className="grid place-items-center text-[#82727c]">
+          <Mail className="size-4" aria-hidden />
+        </div>
+        <input
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          value={email}
+          onChange={(event) => onEmailChange(event.target.value)}
+          placeholder="you@example.com"
+          className="h-12 min-w-0 bg-transparent pr-3 text-[16px] text-[#251d23] outline-none placeholder:text-[#a99ea4]"
+        />
+      </div>
+
+      <input
+        type="password"
+        autoComplete={mode === "create" ? "new-password" : "current-password"}
+        value={password}
+        onChange={(event) => onPasswordChange(event.target.value)}
+        placeholder="Password"
+        className="mt-3 h-12 w-full rounded-[14px] border border-white bg-white px-4 text-[16px] text-[#251d23] outline-none placeholder:text-[#a99ea4] focus:ring-[3px] focus:ring-[#d9b3ea]/40"
+      />
+
+      {email && !emailReady ? (
+        <p className="mt-2 text-sm text-red-700">Enter a valid email to continue.</p>
+      ) : null}
+
+      <button
         type="button"
-        onClick={onCheckout}
-        disabled={!canUnlock || isBusy || (checkoutReturn && localGeneration.status !== "failed")}
-        className="shrink-0 h-14 w-full rounded-full border-0 bg-gradient-to-r from-[#6d35a2] to-[#cb4576] text-[16px] font-semibold text-white shadow-[0_20px_44px_rgba(117,54,128,0.24)] transition hover:opacity-95 active:scale-[0.99] disabled:bg-none disabled:bg-[#ded6cf] disabled:text-[#8f858a] disabled:shadow-none"
+        onClick={onSubmit}
+        disabled={submitting || !emailReady || password.length < 6}
+        className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#241b25] text-sm font-semibold text-white transition hover:bg-[#342838] active:scale-[0.99] disabled:bg-[#ded6cf] disabled:text-[#8f858a]"
       >
-        {checkoutReturn && hasLocalResult ? <Play className="size-4" aria-hidden /> : <LockKeyhole className="size-4" aria-hidden />}
-        {checkoutReturn
-          ? hasLocalResult
-            ? "Song ready above"
-            : localGeneration.status === "failed"
-              ? checkoutState === "creating" ? "Retrying..." : "Retry generation"
-              : "Generating your song..."
-          : checkoutState === "creating"
-            ? localBypass ? "Generating your song..." : "Opening unlock..."
-            : checkoutState === "redirecting"
-              ? "Opening Whop..."
-              : "Unlock my full song"}
+        {submitting
+          ? mode === "create" ? "Creating account..." : "Signing in..."
+          : mode === "create" ? "Create account" : "Sign in"}
         <ArrowRight className="size-4" aria-hidden />
-      </Button>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => onModeChange(mode === "create" ? "sign-in" : "create")}
+        className="mt-3 w-full text-center text-sm font-semibold text-[#5f2584]"
+      >
+        {mode === "create" ? "Already have an account? Sign in" : "Need an account? Create one"}
+      </button>
     </div>
   );
 }
@@ -1670,6 +1920,10 @@ function DesktopCreator({
   checkoutState,
   isBusy,
   canUnlock,
+  accountReady,
+  accountPassword,
+  accountMode,
+  accountState,
   localBypass,
   localGeneration,
   checkoutReturn,
@@ -1687,6 +1941,9 @@ function DesktopCreator({
   onOpenRefine,
   onAppendSoundNote,
   onEmailChange,
+  onPasswordChange,
+  onAccountModeChange,
+  onAccountSubmit,
   onCheckout,
 }: {
   step: number;
@@ -1704,6 +1961,10 @@ function DesktopCreator({
   checkoutState: CheckoutState;
   isBusy: boolean;
   canUnlock: boolean;
+  accountReady: boolean;
+  accountPassword: string;
+  accountMode: AccountMode;
+  accountState: AccountState;
   localBypass: boolean;
   localGeneration: LocalGenerationState;
   checkoutReturn: boolean;
@@ -1721,6 +1982,9 @@ function DesktopCreator({
   onOpenRefine: () => void;
   onAppendSoundNote: (note: string) => void;
   onEmailChange: (email: string) => void;
+  onPasswordChange: (password: string) => void;
+  onAccountModeChange: (mode: AccountMode) => void;
+  onAccountSubmit: () => void;
   onCheckout: () => void;
 }) {
   const desktopStep = Math.min(Math.max(step, 1), 3);
@@ -1883,11 +2147,18 @@ function DesktopCreator({
               checkoutState={checkoutState}
               isBusy={isBusy}
               canUnlock={canUnlock}
+              accountReady={accountReady}
+              accountPassword={accountPassword}
+              accountMode={accountMode}
+              accountState={accountState}
               localBypass={localBypass}
               localGeneration={localGeneration}
               checkoutReturn={checkoutReturn}
               returnStatusText={returnStatusText}
               onEmailChange={onEmailChange}
+              onPasswordChange={onPasswordChange}
+              onAccountModeChange={onAccountModeChange}
+              onAccountSubmit={onAccountSubmit}
               onCheckout={onCheckout}
             />
           ) : null}
@@ -2253,11 +2524,18 @@ function DesktopResultStep({
   checkoutState,
   isBusy,
   canUnlock,
+  accountReady,
+  accountPassword,
+  accountMode,
+  accountState,
   localBypass,
   localGeneration,
   checkoutReturn,
   returnStatusText,
   onEmailChange,
+  onPasswordChange,
+  onAccountModeChange,
+  onAccountSubmit,
   onCheckout,
 }: {
   stats: MessageStats;
@@ -2268,11 +2546,18 @@ function DesktopResultStep({
   checkoutState: CheckoutState;
   isBusy: boolean;
   canUnlock: boolean;
+  accountReady: boolean;
+  accountPassword: string;
+  accountMode: AccountMode;
+  accountState: AccountState;
   localBypass: boolean;
   localGeneration: LocalGenerationState;
   checkoutReturn: boolean;
   returnStatusText: string | null;
   onEmailChange: (email: string) => void;
+  onPasswordChange: (password: string) => void;
+  onAccountModeChange: (mode: AccountMode) => void;
+  onAccountSubmit: () => void;
   onCheckout: () => void;
 }) {
   const hasLocalResult = localGeneration.status === "succeeded" && localGeneration.audioUrl;
@@ -2286,7 +2571,9 @@ function DesktopResultStep({
     : "Unlock your full song";
   const description = checkoutReturn
     ? returnStatusText ?? "Payment confirmed"
-    : "Save the setup with your email, then continue to Whop to unlock the full version.";
+    : accountReady
+      ? "Your account is ready. Continue to unlock the full version."
+      : "Create your account before pricing and unlock.";
 
   return (
     <div className="grid min-h-[600px] grid-cols-[minmax(0,1fr)_340px] gap-6">
@@ -2328,30 +2615,28 @@ function DesktopResultStep({
           {description}
         </p>
 
-        {!checkoutReturn ? (
-          <>
-        <label htmlFor="desktop-email" className="mt-6 text-sm font-semibold text-[#2a2228]">
-          Email
-        </label>
-        <div className="mt-3 grid grid-cols-[44px_minmax(0,1fr)] overflow-hidden rounded-[16px] bg-white shadow-[inset_0_0_0_1px_rgba(71,55,60,0.08)] focus-within:ring-[3px] focus-within:ring-[#d9b3ea]/40">
-          <div className="grid place-items-center text-[#82727c]">
-            <Mail className="size-4" aria-hidden />
-          </div>
-          <input
-            id="desktop-email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            value={email}
-            onChange={(event) => onEmailChange(event.target.value)}
-            placeholder="you@example.com"
-            className="h-12 min-w-0 bg-transparent pr-3 text-[16px] text-[#251d23] outline-none placeholder:text-[#a99ea4]"
+        {!checkoutReturn && !accountReady ? (
+          <AccountGate
+            email={email}
+            emailReady={emailReady}
+            password={accountPassword}
+            mode={accountMode}
+            state={accountState}
+            onEmailChange={onEmailChange}
+            onPasswordChange={onPasswordChange}
+            onModeChange={onAccountModeChange}
+            onSubmit={onAccountSubmit}
           />
-        </div>
-        {email && !emailReady ? (
-          <p className="mt-2 text-sm text-red-700">Enter a valid email to continue.</p>
-        ) : null}
-          </>
+        ) : !checkoutReturn ? (
+          <div className="mt-6 rounded-[18px] border border-[#ead7eb] bg-[#f2dff2] p-4">
+            <p className="text-sm font-semibold text-[#5f2584]">Account ready</p>
+            <p className="mt-1 text-sm leading-6 text-[#4c4149]">
+              We will save this song to your account after checkout.
+            </p>
+            <p className="mt-3 rounded-[14px] bg-white px-4 py-3 text-sm font-semibold text-[#2a2228]">
+              {email}
+            </p>
+          </div>
         ) : (
           <div className="mt-6 rounded-[18px] border border-[#ead7eb] bg-[#f2dff2] p-4">
             <p className="text-sm font-semibold text-[#5f2584]">
@@ -2373,7 +2658,7 @@ function DesktopResultStep({
           <SummaryLine label="Lyrics" value="Exact words" />
         </div>
 
-        {!checkoutReturn ? (
+        {!checkoutReturn && accountReady ? (
           <div className="mt-5 rounded-[20px] border border-[#e7d8d0] bg-white p-4">
           <div className="flex items-end justify-between gap-3">
             <div>
@@ -2410,26 +2695,28 @@ function DesktopResultStep({
           </p>
         ) : null}
 
-        <Button
-          type="button"
-          onClick={onCheckout}
-          disabled={!canUnlock || isBusy || (checkoutReturn && localGeneration.status !== "failed")}
-          className="mt-auto h-12 w-full rounded-full border-0 bg-gradient-to-r from-[#6d35a2] to-[#cb4576] text-[15px] font-semibold text-white shadow-[0_20px_44px_rgba(117,54,128,0.24)] transition hover:opacity-95 active:scale-[0.99] disabled:bg-none disabled:bg-[#ded6cf] disabled:text-[#8f858a] disabled:shadow-none"
-        >
-          {checkoutReturn && hasLocalResult ? <Play className="size-4" aria-hidden /> : <LockKeyhole className="size-4" aria-hidden />}
-          {checkoutReturn
-            ? hasLocalResult
-              ? "Song ready above"
-              : localGeneration.status === "failed"
-                ? checkoutState === "creating" ? "Retrying..." : "Retry generation"
-                : "Generating your song..."
-            : checkoutState === "creating"
-            ? localBypass ? "Generating your song..." : "Opening unlock..."
-            : checkoutState === "redirecting"
-              ? "Opening Whop..."
-              : "Unlock my full song"}
-          <ArrowRight className="size-4" aria-hidden />
-        </Button>
+        {checkoutReturn || accountReady ? (
+          <Button
+            type="button"
+            onClick={onCheckout}
+            disabled={!canUnlock || isBusy || (checkoutReturn && localGeneration.status !== "failed")}
+            className="mt-auto h-12 w-full rounded-full border-0 bg-gradient-to-r from-[#6d35a2] to-[#cb4576] text-[15px] font-semibold text-white shadow-[0_20px_44px_rgba(117,54,128,0.24)] transition hover:opacity-95 active:scale-[0.99] disabled:bg-none disabled:bg-[#ded6cf] disabled:text-[#8f858a] disabled:shadow-none"
+          >
+            {checkoutReturn && hasLocalResult ? <Play className="size-4" aria-hidden /> : <LockKeyhole className="size-4" aria-hidden />}
+            {checkoutReturn
+              ? hasLocalResult
+                ? "Song ready above"
+                : localGeneration.status === "failed"
+                  ? checkoutState === "creating" ? "Retrying..." : "Retry generation"
+                  : "Generating your song..."
+              : checkoutState === "creating"
+                ? localBypass ? "Generating your song..." : "Opening unlock..."
+                : checkoutState === "redirecting"
+                  ? "Opening Whop..."
+                  : "Unlock my full song"}
+            <ArrowRight className="size-4" aria-hidden />
+          </Button>
+        ) : null}
       </div>
     </div>
   );

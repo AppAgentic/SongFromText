@@ -43,9 +43,16 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   let uid: string;
+  let decodedEmail: string;
   try {
     const decoded = await getAdminAuth().verifyIdToken(token);
+    const tokenEmail = decoded.email?.trim().toLowerCase();
+    if (!tokenEmail || decoded.firebase?.sign_in_provider === "anonymous") {
+      return NextResponse.json({ error: "account_required" }, { status: 401 });
+    }
+
     uid = decoded.uid;
+    decodedEmail = tokenEmail;
   } catch (error) {
     console.warn("Checkout auth verification failed", error);
     return NextResponse.json({ error: "invalid_auth" }, { status: 401 });
@@ -67,6 +74,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       },
       { status: 400 },
     );
+  }
+
+  if (parsed.data.email !== decodedEmail) {
+    return NextResponse.json({ error: "email_mismatch" }, { status: 400 });
   }
 
   const db = getAdminDb();

@@ -78,6 +78,7 @@ SongFromText should provide a much simpler, trend-aligned experience: paste the 
 - **Fast over flexible**: keep the creation flow extremely short.
 - **Mobile-first over dashboard-first**: design for ad traffic on phones.
 - **Perceived certainty over ambiguity**: by the paywall stage the user should feel that "their song is ready."
+- **Account before price**: capture a real Firebase account before showing the weekly price or redirecting to Whop so Meta CAPI gets stronger match data and users can retrieve songs later.
 - **Cheap before payment, expensive after payment.**
 
 ## 7. End-to-End User Flow
@@ -88,9 +89,10 @@ SongFromText should provide a much simpler, trend-aligned experience: paste the 
 5. System validates that the input is substantial enough to make a good song.
 6. System shows a processing screen with low-cost progress states.
 7. System shows a locked preview with generated title, tone, and waveform-style teaser.
-8. User sees hard paywall for weekly subscription.
-9. After successful payment, backend triggers Kie/Suno generation.
-10. User is taken to a result screen once assets are ready, then can access songs from the library.
+8. User creates or signs into a Firebase account before price is shown.
+9. User sees hard paywall for weekly subscription.
+10. After successful payment, backend triggers Kie/Suno generation.
+11. User is taken to a result screen once assets are ready, then can access songs from the account library.
 
 ## 8. Screen-by-Screen Requirements
 
@@ -108,9 +110,10 @@ SongFromText should provide a much simpler, trend-aligned experience: paste the 
 - Do not over-explain AI generation mechanics.
 
 ### 8.3 Sign Up / Continue
-- Allow email and social continuation options if used.
-- This screen can also be deferred until payment if the checkout flow covers identity creation.
-- If shown before payment, keep it minimal and mobile-friendly.
+- Require account creation/sign-in before showing pricing or sending the user to Whop.
+- Use Firebase Auth as the source of identity; email/password is sufficient for v1, with social continuation optional later.
+- Keep it minimal and mobile-friendly so the locked-preview momentum is not lost.
+- Reuse the captured email for Meta CAPI matching and for retrieving generated songs later.
 
 ### 8.4 Intro / Rules modal
 - Explain two key rules: only paste the other person's messages, and those exact messages are preserved as lyrics.

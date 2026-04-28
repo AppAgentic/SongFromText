@@ -87,7 +87,7 @@ export function SongsLibrary() {
         <div className="mt-10">
           <h1 className="font-serif text-5xl leading-tight">Your songs</h1>
           <p className="mt-3 max-w-xl text-base leading-7 text-[#675b61]">
-            Songs created from this browser will appear here after checkout and generation.
+            Songs you unlock are saved to your account so you can come back from any device.
           </p>
         </div>
 
@@ -98,8 +98,8 @@ export function SongsLibrary() {
         {status === "signed_out" ? (
           <EmptyState
             icon={<Music className="size-6" />}
-            title="No saved session yet"
-            description="Create a song first, then return here from the same browser."
+            title="Sign in from the creator"
+            description="Create or sign into your account before unlocking a song, then it will appear here."
           />
         ) : null}
 
